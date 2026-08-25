@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Aquarium — Robot Edition</title>
+<style>
+  * { margin: 0; padding: 0; }
+  body { background: #0e1013; overflow: hidden; }
+  canvas { display: block; }
+  .hint {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    font: 14px/1.4 system-ui, sans-serif; color: rgba(200,210,220,0.5);
+    background: rgba(6,22,38,0.7); border: 1px solid rgba(88,214,255,0.15);
+    border-radius: 20px; padding: 8px 20px; pointer-events: none;
+    animation: hintFade 6s ease-out forwards;
+  }
+  @keyframes hintFade { 0%,60% { opacity: 1 } 100% { opacity: 0 } }
+  .count {
+    position: fixed; top: 16px; right: 20px;
+    font: 600 13px/1 system-ui, sans-serif; color: rgba(200,210,220,0.35);
+    letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+<div class="hint" id="hint">click anywhere to add a robot</div>
+<div class="count" id="count"></div>
+
+<script src="vendor/three.min.js"></script>
+<script src="vendor/RoomEnvironment.js"></script>
+<script src="vendor/GLTFLoader.js"></script>
+<script src="vendor/DRACOLoader.js"></script>
+<script src="vendor/SkeletonUtils.js"></script>
+<script src="assets/fish-frame.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var MODEL_URL = 'assets/models/pack/spherebot/spherebot.glb';
+  var ROBOT_NAMES = ['Clown Bot','Blue Bot','Sniper Bot','Trigger Bot','Angel Bot',
+    'Scout Bot','Guardian Bot','Hunter Bot','Tracker Bot','Defender Bot','Butterfly Bot','Disc Bot'];
+  var MAX_ROBOTS = 20;
+
+  var Z_NEAR = 6, Z_FAR = -18, FLOOR = 0, LIT_DEPTH = 12.4;
+  var MARGIN = 1.6, FLOOR_ROOM = 0.9;
+  var CAM_POS = [0, 6.5, 17.5], CAM_TARGET = [0, 6.5, 0];
+  var FOV = 42;
+  var TAN_HALF_FOV = Math.tan(FOV / 2 * Math.PI / 180);
+  var BEATS_PER_LENGTH = 0.85;
+
+  var renderer, scene, camera, clock;
+  var fishes = [];
+  var uTime = { value: 0 };
+  var caustics = { value: 1 };
+  var baseGLTF = null;
+  var baseInfo = null;
+
+  function limitsAt(z) {
+    var d = CAM_POS[2] - z;
+    var half = d * TAN_HALF_FOV;
+    var aspect = camera ? camera.aspect : innerWidth / innerHeight;
+    var yc = CAM_TARGET[1];
+    return {
+      hw: half * aspect + MARGIN,
+      yTop: yc + half + MARGIN,
+      yBot: Math.max(FLOOR + FLOOR_ROOM, yc - half - MARGIN)
+    };
+  }
+
+  // ── caustic shader ──────────────────────────────────────────────────────
+  var CAUSTIC_GLSL = [
+    'float causticPattern(vec2 p, float t) {',
+    '  vec2 q = p * 0.55;',
+    '  float c = 0.0;',
+    '  for (int i = 0; i < 3; i++) {',
+    '    float fi = float(i) + 1.0;',
+    '    q += 0.42 * vec2(sin(q.y * 1.35 + t * 1.05 * fi), cos(q.x * 1.6 + t * 0.9 * fi));',
+    '    c += 0.32 / (abs(sin(q.x) * sin(q.y)) * 3.3 + 0.32);',
+    '  }',
+    '  return pow(clamp(c * 0.16, 0.0, 1.0), 2.5);',
+    '}'
+  ].join('\n');
+
+  function addCaustics(mat, strength) {
+    mat.onBeforeCompile = function (shader) {
+      shader.uniforms.uTime = uTime;
+      shader.uniforms.uCaustics = caustics;
+      shader.vertexShader = 'varying vec3 vWPos;\n' + shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\n  vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;'
+      );
+      shader.fragmentShader = 'varying vec3 vWPos;\nuniform float uTime;\nuniform float uCaustics;\n' +
+        CAUSTIC_GLSL + '\n' + shader.fragmentShader.replace(
+          '#include <map_fragment>',
+          [
+            '#include <map_fragment>',
+            'float caus = causticPattern(vWPos.xz, uTime * 0.35);',
+            'float depthFade = 1.0 - clamp(vWPos.y / ' + LIT_DEPTH.toFixed(1) + ', 0.0, 1.0) * 0.65;',
+            'diffuseColor.rgb += vec3(0.45, 0.72, 0.85) * caus * ' + strength.toFixed(2) + ' * uCaustics * depthFade;'
+          ].join('\n')
+        );
+    };
+    mat.customProgramCacheKey = function () { return 'caustic' + strength; };
+    return mat;
+  }
+
+  // ── orientation ─────────────────────────────────────────────────────────
+  function axisVec(name, sign) {
+    return new THREE.Vector3(name === 'x' ? sign : 0, name === 'y' ? sign : 0, name === 'z' ? sign : 0);
+  }
+  function maskVec(name) { return axisVec(name, 1); }
+
+  function fishFrame(root, useWorld, axes) {
+    var box = new THREE.Box3(), sum = new THREE.Vector3(), v = new THREE.Vector3(), n = 0;
+    root.traverse(function (o) {
+      if (!o.isMesh) return;
+      var p = o.geometry.attributes.position;
+      for (var i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i);
+        if (useWorld) v.applyMatrix4(o.matrixWorld);
+        box.expandByPoint(v); sum.add(v); n++;
+      }
+    });
+    var size = box.getSize(new THREE.Vector3());
+    var center = box.getCenter(new THREE.Vector3());
+    var centroid = sum.divideScalar(Math.max(n, 1));
+    var order = [['x', size.x], ['y', size.y], ['z', size.z]].sort(function (a, b) { return b[1] - a[1]; });
+    var body = order[0][0], up = order[1][0], lat = order[2][0];
+    if (axes) { body = axes.body; up = axes.up; lat = axes.lat; }
+    var span = size[body] || 1;
+    var thickLow = 0, thickHigh = 0;
+    root.traverse(function (o) {
+      if (!o.isMesh) return;
+      var p = o.geometry.attributes.position;
+      for (var i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i);
+        if (useWorld) v.applyMatrix4(o.matrixWorld);
+        var t = (v[body] - box.min[body]) / span;
+        var lateral = Math.abs(v[lat] - center[lat]);
+        if (t < 0.18) thickLow = Math.max(thickLow, lateral);
+        else if (t > 0.82) thickHigh = Math.max(thickHigh, lateral);
+      }
+    });
+    return {
+      box: box, size: size, center: center,
+      body: body, up: up, lat: lat,
+      headAtMax: thickHigh > thickLow,
+      dorsalPositive: FishFrame.dorsalPositive(up, centroid, center)
+    };
+  }
+
+  function normalizeFish(root, targetLen, skel) {
+    root.updateWorldMatrix(true, true);
+    var axes = skel && skel.axes;
+    var w = fishFrame(root, true, axes);
+    var local = fishFrame(root, false, axes);
+    if (skel && typeof skel.headAtMax === 'boolean') {
+      w.headAtMax = skel.headAtMax; local.headAtMax = skel.headAtMax;
+    }
+    var forward = axisVec(w.body, w.headAtMax ? 1 : -1);
+    var upVec = axisVec(w.up, w.dorsalPositive ? 1 : -1);
+    var right = new THREE.Vector3().crossVectors(upVec, forward);
+    var basis = new THREE.Matrix4().makeBasis(right, upVec, forward);
+    var quat = new THREE.Quaternion().setFromRotationMatrix(basis).invert();
+    root.position.sub(w.center);
+    return {
+      quat: quat, scale: targetLen / (w.size[w.body] || 1),
+      bodyMask: maskVec(local.body), latMask: maskVec(local.lat),
+      range: [local.box.min[local.body], local.box.max[local.body]],
+      headAtMax: local.headAtMax
+    };
+  }
+
+  // ── strip root motion ───────────────────────────────────────────────────
+  function stripRootMotion(clip, modelSize) {
+    var dominated = [];
+    clip.tracks.forEach(function (tr) {
+      if (!(tr instanceof THREE.VectorKeyframeTrack)) return;
+      var v = tr.values, n = v.length / 3;
+      var lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+      for (var i = 0; i < n; i++) for (var c = 0; c < 3; c++) {
+        if (v[i * 3 + c] < lo[c]) lo[c] = v[i * 3 + c];
+        if (v[i * 3 + c] > hi[c]) hi[c] = v[i * 3 + c];
+      }
+      var move = Math.sqrt(
+        Math.pow(hi[0] - lo[0], 2) + Math.pow(hi[1] - lo[1], 2) + Math.pow(hi[2] - lo[2], 2));
+      if (move > modelSize * 0.3) dominated.push(tr);
+    });
+    dominated.forEach(function (tr) {
+      var idx = clip.tracks.indexOf(tr);
+      if (idx !== -1) clip.tracks.splice(idx, 1);
+    });
+  }
+
+  // ── beat detection ──────────────────────────────────────────────────────
+  var FIN_BONE = /fin|pect|dors|anal|pelv|tip/i;
+  function clipBeatHz(clip) {
+    var best = 0, bestSpan = 0;
+    for (var t = 0; t < clip.tracks.length; t++) {
+      var tr = clip.tracks[t];
+      if (!(tr instanceof THREE.QuaternionKeyframeTrack)) continue;
+      if (FIN_BONE.test(tr.name)) continue;
+      var v = tr.values, n = v.length / 4;
+      if (n < 4) continue;
+      for (var c = 0; c < 3; c++) {
+        var min = Infinity, max = -Infinity, sum = 0;
+        for (var i = 0; i < n; i++) {
+          var x = v[i * 4 + c];
+          if (x < min) min = x; if (x > max) max = x; sum += x;
+        }
+        var span = max - min;
+        if (span <= bestSpan) continue;
+        var mean = sum / n, cross = 0;
+        for (var j = 1; j < n; j++) {
+          if ((v[(j - 1) * 4 + c] - mean) * (v[j * 4 + c] - mean) < 0) cross++;
+        }
+        var dur = tr.times[tr.times.length - 1] || 1;
+        bestSpan = span; best = cross / 2 / dur;
+      }
+    }
+    return best > 0.05 ? best : 0;
+  }
+
+  // ── bend shader ─────────────────────────────────────────────────────────
+  function addBend(mat, info, amp, phase) {
+    var uniforms = {
+      uTime: uTime, uAmp: { value: amp }, uPhase: { value: phase },
+      uBodyMask: { value: info.bodyMask }, uLatMask: { value: info.latMask },
+      uRange: { value: new THREE.Vector2(info.range[0], info.range[1]) },
+      uHeadAtMax: { value: info.headAtMax ? 1 : 0 }
+    };
+    var prev = mat.onBeforeCompile;
+    mat.onBeforeCompile = function (shader) {
+      if (prev) prev.call(this, shader);
+      Object.keys(uniforms).forEach(function (k) { shader.uniforms[k] = uniforms[k]; });
+      shader.vertexShader =
+        'uniform float uTime; uniform float uAmp; uniform float uPhase;\n' +
+        'uniform vec3 uBodyMask; uniform vec3 uLatMask;\n' +
+        'uniform vec2 uRange; uniform float uHeadAtMax;\n' +
+        shader.vertexShader.replace('#include <begin_vertex>', [
+          '#include <begin_vertex>',
+          'float a = dot(transformed, uBodyMask);',
+          'float span = max(uRange.y - uRange.x, 0.0001);',
+          'float k = uHeadAtMax > 0.5 ? (uRange.y - a) / span : (a - uRange.x) / span;',
+          'k = clamp(k, 0.0, 1.0); k *= k;',
+          'float w = sin(uTime * 5.5 + uPhase + k * 3.2) * uAmp * k * span * 0.25;',
+          'transformed += uLatMask * w;'
+        ].join('\n'));
+    };
+    mat.customProgramCacheKey = function () { return prev ? 'paint+bend' : 'bend'; };
+  }
+
+  // ── spawn ───────────────────────────────────────────────────────────────
+  function spawnFromModel(gltf, info) {
+    var clone = THREE.SkeletonUtils.clone(gltf.scene);
+    var pivot = new THREE.Group();
+    pivot.quaternion.copy(info.quat);
+    pivot.scale.setScalar(info.scale);
+    pivot.add(clone);
+    var mixer = null, beatHz = 0;
+    if (gltf.animations && gltf.animations.length) {
+      mixer = new THREE.AnimationMixer(clone);
+      var clip = gltf.animations[0];
+      beatHz = clipBeatHz(clip);
+      var act = mixer.clipAction(clip);
+      act.time = Math.random() * 2;
+      act.play();
+    }
+    var phase = Math.random() * 6.28;
+    clone.traverse(function (o) {
+      if (!o.isMesh) return;
+      o.material = addCaustics(o.material.clone(), 0.5);
+      o.material.envMapIntensity = 0.5;
+      var bend = beatHz ? 0 : 0.35;
+      if (bend > 0) addBend(o.material, info, bend, phase);
+    });
+    var group = new THREE.Group();
+    group.add(pivot);
+    return { group: group, mixer: mixer, phase: phase, beatHz: beatHz };
+  }
+
+  // ── Fish class ──────────────────────────────────────────────────────────
+  function Fish(gltf, info, len) {
+    var built = spawnFromModel(gltf, info);
+    this.mesh = built.group;
+    this.mixer = built.mixer;
+    this.beatHz = built.beatHz;
+    this.len = len;
+    this.radius = len * 0.5;
+    this.speed = 1.2 + Math.random() * 0.6;
+    this.phase = built.phase;
+
+    var z0 = Z_FAR + Math.random() * (Z_NEAR - Z_FAR);
+    var l0 = limitsAt(z0);
+    var inX = Math.max(0.5, l0.hw - MARGIN);
+    var inLo = l0.yBot + MARGIN, inHi = l0.yTop - MARGIN;
+    this.pos = new THREE.Vector3(
+      (Math.random() * 2 - 1) * inX,
+      inLo + Math.random() * Math.max(0.5, inHi - inLo),
+      z0
+    );
+    this.vel = new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize().multiplyScalar(this.speed);
+    scene.add(this.mesh);
+  }
+
+  var _a = new THREE.Vector3(), _l = new THREE.Vector3();
+  Fish.prototype.update = function (dt, t) {
+    _a.set(
+      Math.sin(t * 0.42 + this.phase) * 0.5,
+      Math.sin(t * 0.3 + this.phase * 1.6) * 0.22,
+      Math.cos(t * 0.37 + this.phase) * 0.5
+    );
+    var M = MARGIN, W = 5;
+    if (this.pos.z > Z_NEAR - M) _a.z -= W;
+    if (this.pos.z < Z_FAR + M) _a.z += W;
+    var lim = limitsAt(this.pos.z);
+    if (this.pos.x > lim.hw - M) _a.x -= W;
+    if (this.pos.x < -lim.hw + M) _a.x += W;
+    if (this.pos.y > lim.yTop - M) _a.y -= W;
+    if (this.pos.y < lim.yBot + M) _a.y += W;
+    var floor = FLOOR + FLOOR_ROOM;
+    if (this.pos.y < floor) _a.y += (floor - this.pos.y) * 4;
+
+    this.vel.addScaledVector(_a, dt * 2.0);
+    var sp = this.vel.length();
+    if (sp > this.speed) this.vel.multiplyScalar(this.speed / sp);
+    if (sp < this.speed * 0.35) this.vel.multiplyScalar(1.05);
+
+    this.pos.addScaledVector(this.vel, dt);
+    this.mesh.position.copy(this.pos);
+    this.mesh.lookAt(_l.copy(this.pos).add(this.vel));
+    this.mesh.rotation.z += Math.sin(t * 2.5 + this.phase) * 0.015;
+
+    if (this.mixer) {
+      var scale;
+      if (this.beatHz) {
+        var want = BEATS_PER_LENGTH * this.vel.length() / this.len;
+        scale = want / this.beatHz;
+      } else {
+        scale = 0.6 + this.vel.length() / this.speed * 0.6;
+      }
+      this.mixer.update(dt * Math.max(0.25, Math.min(2, scale)));
+    }
+  };
+
+  // ── scene ───────────────────────────────────────────────────────────────
+  function init() {
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.92;
+    document.body.appendChild(renderer.domElement);
+
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0e1013);
+    scene.fog = new THREE.Fog(0x2e86a8, 14, 60);
+
+    camera = new THREE.PerspectiveCamera(FOV, innerWidth / innerHeight, 0.1, 300);
+    camera.position.fromArray(CAM_POS);
+    camera.lookAt(new THREE.Vector3().fromArray(CAM_TARGET));
+
+    var pmrem = new THREE.PMREMGenerator(renderer);
+    pmrem.compileEquirectangularShader();
+    var envRT = pmrem.fromScene(new THREE.RoomEnvironment(), 0.04);
+    scene.environment = envRT.texture;
+
+    scene.add(new THREE.AmbientLight(0x223444, 0.16));
+    var spot = new THREE.SpotLight(0xe8f7ff, 3.4, 48, 0.62, 0.42, 1.1);
+    spot.position.set(0, 15.2, -1.5);
+    spot.target.position.set(0, 0, 0);
+    scene.add(spot, spot.target);
+    var fill = new THREE.DirectionalLight(0x9fc9e0, 0.35);
+    fill.position.set(12, 8, 20);
+    scene.add(fill);
+
+    clock = new THREE.Clock();
+    addEventListener('resize', onResize);
+
+    loadModel();
+    animate();
+  }
+
+  function loadModel() {
+    var loader = new THREE.GLTFLoader();
+    if (THREE.DRACOLoader) {
+      var draco = new THREE.DRACOLoader();
+      draco.setDecoderPath('vendor/draco/');
+      loader.setDRACOLoader(draco);
+    }
+    loader.load(MODEL_URL, function (gltf) {
+      var skel = FishFrame.fromSkeleton(gltf);
+      var info = normalizeFish(gltf.scene, 1.8, skel);
+      var b = FishFrame.bounds(gltf.scene);
+      (gltf.animations || []).forEach(function (clip) {
+        stripRootMotion(clip, Math.max(b.size.x, b.size.y, b.size.z));
+      });
+      baseGLTF = gltf;
+      baseInfo = info;
+      for (var i = 0; i < 3; i++) addRobot();
+      updateCount();
+    });
+  }
+
+  function addRobot() {
+    if (!baseGLTF || fishes.length >= MAX_ROBOTS) return;
+    fishes.push(new Fish(baseGLTF, baseInfo, 1.8));
+  }
+
+  function updateCount() {
+    document.getElementById('count').textContent =
+      fishes.length + ' robot' + (fishes.length !== 1 ? 's' : '');
+  }
+
+  addEventListener('click', function () {
+    if (!baseGLTF) return;
+    addRobot();
+    updateCount();
+    var h = document.getElementById('hint');
+    if (h) h.remove();
+  });
+
+  function animate() {
+    requestAnimationFrame(animate);
+    var dt = Math.min(clock.getDelta(), 0.05);
+    var t = clock.elapsedTime;
+    uTime.value = t;
+    for (var i = 0; i < fishes.length; i++) fishes[i].update(dt, t);
+    renderer.render(scene, camera);
+  }
+
+  function onResize() {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
