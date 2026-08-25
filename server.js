@@ -874,7 +874,7 @@ function pageFor(url) {
 // уезжает и .git, и детские рисунки из data/, и купленный пак моделей —
 // папка с ним лежит в том же каталоге проекта.
 const STATIC_DIRS = ['/assets/', '/vendor/', '/demos/', '/tools/'];
-const STATIC_FILES = ['/print.html', '/terms.html', '/favicon.ico'];
+const STATIC_FILES = ['/print.html', '/terms.html', '/favicon.ico', '/live.html'];
 // Из data наружу смотрят только две вещи: свои фоны и снимок сцены.
 // Текстуры рыбок отдаёт API, всё остальное — не для сети.
 const DATA_FILE_RE = /^\/data\/tanks\/([^/]+)\/(?:preview\.jpg|backgrounds\/[\w.-]+)$/;
