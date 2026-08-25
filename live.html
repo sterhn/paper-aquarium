@@ -756,6 +756,13 @@
       loader.setDRACOLoader(draco);
     }
     loader.load(MODEL_URL, function (gltf) {
+      var junk = /^(Plane|Hemi|Cube)$/i;
+      var toRemove = [];
+      gltf.scene.traverse(function (o) {
+        if (junk.test(o.name)) toRemove.push(o);
+      });
+      toRemove.forEach(function (o) { if (o.parent) o.parent.remove(o); });
+
       var skel = FishFrame.fromSkeleton(gltf);
       var info = normalizeFish(gltf.scene, 1.8, skel);
       var b = FishFrame.bounds(gltf.scene);
