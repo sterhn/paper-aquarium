@@ -508,7 +508,9 @@
     clone.traverse(function (o) {
       if (!o.isMesh) return;
       o.material = addCaustics(o.material.clone(), 0.5);
-      o.material.envMapIntensity = 0.3;
+      o.material.metalness = 0;
+      o.material.roughness = 0.7;
+      o.material.envMapIntensity = 0;
       var bend = beatHz ? 0 : 0.35;
       if (bend > 0) addBend(o.material, info, bend, phase);
     });
@@ -727,22 +729,13 @@
     camera.position.fromArray(CAM_POS);
     camera.lookAt(new THREE.Vector3().fromArray(CAM_TARGET));
 
-    var pmrem = new THREE.PMREMGenerator(renderer);
-    pmrem.compileEquirectangularShader();
-    var envScene = new THREE.Scene();
-    envScene.background = new THREE.Color(0x1a5c78);
-    var envLight = new THREE.HemisphereLight(0x8ec8e8, 0x1a3a4a, 1);
-    envScene.add(envLight);
-    var envRT = pmrem.fromScene(envScene, 0.04);
-    scene.environment = envRT.texture;
-    pmrem.dispose();
-
-    scene.add(new THREE.AmbientLight(0x223444, 0.16));
-    var spot = new THREE.SpotLight(0xe8f7ff, 3.4, 48, 0.62, 0.42, 1.1);
+    scene.add(new THREE.HemisphereLight(0x8ec8e8, 0x1a3a4a, 0.6));
+    scene.add(new THREE.AmbientLight(0x446688, 0.4));
+    var spot = new THREE.SpotLight(0xe8f7ff, 3.0, 48, 0.62, 0.42, 1.1);
     spot.position.set(0, 15.2, -1.5);
     spot.target.position.set(0, 0, 0);
     scene.add(spot, spot.target);
-    var fill = new THREE.DirectionalLight(0x9fc9e0, 0.35);
+    var fill = new THREE.DirectionalLight(0x9fc9e0, 0.5);
     fill.position.set(12, 8, 20);
     scene.add(fill);
 
