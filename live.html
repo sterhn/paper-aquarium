@@ -157,7 +157,6 @@
 </div>
 
 <script src="vendor/three.min.js"></script>
-<script src="vendor/RoomEnvironment.js"></script>
 <script src="vendor/GLTFLoader.js"></script>
 <script src="vendor/DRACOLoader.js"></script>
 <script src="vendor/SkeletonUtils.js"></script>
@@ -509,7 +508,7 @@
     clone.traverse(function (o) {
       if (!o.isMesh) return;
       o.material = addCaustics(o.material.clone(), 0.5);
-      o.material.envMapIntensity = 0.5;
+      o.material.envMapIntensity = 0.3;
       var bend = beatHz ? 0 : 0.35;
       if (bend > 0) addBend(o.material, info, bend, phase);
     });
@@ -679,14 +678,33 @@
     }
   }
 
+  function makeGradientBg() {
+    var c = document.createElement('canvas');
+    c.width = 256; c.height = 256;
+    var ctx = c.getContext('2d');
+    var g = ctx.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0, '#0a3d5c');
+    g.addColorStop(0.5, '#0c2a3e');
+    g.addColorStop(1, '#061820');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 2, 256);
+    var tex = new THREE.CanvasTexture(c);
+    tex.encoding = THREE.sRGBEncoding;
+    return tex;
+  }
+
   function applyBackground(url) {
     if (!url) {
-      scene.background = new THREE.Color(0x0e1013);
+      scene.background = makeGradientBg();
+      fitBackground();
       return;
     }
     new THREE.TextureLoader().load(url, function (tex) {
       tex.encoding = THREE.sRGBEncoding;
       scene.background = tex;
+      fitBackground();
+    }, undefined, function () {
+      scene.background = makeGradientBg();
       fitBackground();
     });
   }
@@ -702,7 +720,7 @@
     document.body.appendChild(renderer.domElement);
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0e1013);
+    scene.background = makeGradientBg();
     scene.fog = new THREE.Fog(0x2e86a8, 14, 60);
 
     camera = new THREE.PerspectiveCamera(FOV, innerWidth / innerHeight, 0.1, 300);
@@ -711,8 +729,13 @@
 
     var pmrem = new THREE.PMREMGenerator(renderer);
     pmrem.compileEquirectangularShader();
-    var envRT = pmrem.fromScene(new THREE.RoomEnvironment(), 0.04);
+    var envScene = new THREE.Scene();
+    envScene.background = new THREE.Color(0x1a5c78);
+    var envLight = new THREE.HemisphereLight(0x8ec8e8, 0x1a3a4a, 1);
+    envScene.add(envLight);
+    var envRT = pmrem.fromScene(envScene, 0.04);
     scene.environment = envRT.texture;
+    pmrem.dispose();
 
     scene.add(new THREE.AmbientLight(0x223444, 0.16));
     var spot = new THREE.SpotLight(0xe8f7ff, 3.4, 48, 0.62, 0.42, 1.1);
