@@ -37,20 +37,20 @@
   {
    "id": 1,
    "name": "clownfish",
-   "title": "Рыба-клоун",
+   "title": "Робот-клоун",
    "titles": {
-    "ru": "Рыба-клоун",
-    "en": "Clownfish",
-    "pl": "Błazenek"
+    "ru": "Робот-клоун",
+    "en": "Clown Bot",
+    "pl": "Robot-błazen"
    },
-   "model": "/assets/models/pack/clownfish/clownfish.gltf",
+   "model": "/assets/models/pack/spherebot/spherebot.glb",
    "svg": "assets/coloring/clownfish.svg",
    "sheets": {
     "ru": "assets/coloring/clownfish.svg",
     "en": "assets/coloring/clownfish.en.svg",
     "pl": "assets/coloring/clownfish.pl.svg"
    },
-   "length": 1.5,
+   "length": 1.8,
    "markers": {
     "tl": [
      0,
@@ -530,20 +530,20 @@
   {
    "id": 2,
    "name": "bluetang",
-   "title": "Голубой хирург",
+   "title": "Синий робот",
    "titles": {
-    "ru": "Голубой хирург",
-    "en": "Blue tang",
-    "pl": "Chirurg niebieski"
+    "ru": "Синий робот",
+    "en": "Blue Bot",
+    "pl": "Niebieski robot"
    },
-   "model": "/assets/models/pack/bluetang/bluetang.gltf",
+   "model": "/assets/models/pack/spherebot/spherebot.glb",
    "svg": "assets/coloring/bluetang.svg",
    "sheets": {
     "ru": "assets/coloring/bluetang.svg",
     "en": "assets/coloring/bluetang.en.svg",
     "pl": "assets/coloring/bluetang.pl.svg"
    },
-   "length": 1.9,
+   "length": 1.8,
    "markers": {
     "tl": [
      0,
@@ -919,20 +919,20 @@
   {
    "id": 3,
    "name": "chelmonrostratus",
-   "title": "Рыба-пинцет",
+   "title": "Робот-стрелок",
    "titles": {
-    "ru": "Рыба-пинцет",
-    "en": "Copperband butterflyfish",
-    "pl": "Chelmon"
+    "ru": "Робот-стрелок",
+    "en": "Sniper Bot",
+    "pl": "Robot-strzelec"
    },
-   "model": "/assets/models/pack/chelmonrostratus/chelmonrostratus.gltf",
+   "model": "/assets/models/pack/spherebot/spherebot.glb",
    "svg": "assets/coloring/chelmonrostratus.svg",
    "sheets": {
     "ru": "assets/coloring/chelmonrostratus.svg",
     "en": "assets/coloring/chelmonrostratus.en.svg",
     "pl": "assets/coloring/chelmonrostratus.pl.svg"
    },
-   "length": 1.7,
+   "length": 1.8,
    "markers": {
     "tl": [
      0,
@@ -1472,20 +1472,20 @@
   {
    "id": 4,
    "name": "clowntriggerfish",
-   "title": "Спинорог",
+   "title": "Робот-триггер",
    "titles": {
-    "ru": "Спинорог",
-    "en": "Clown triggerfish",
-    "pl": "Rogatnica klaun"
+    "ru": "Робот-триггер",
+    "en": "Trigger Bot",
+    "pl": "Robot-spust"
    },
-   "model": "/assets/models/pack/clowntriggerfish/clowntriggerfish.gltf",
+   "model": "/assets/models/pack/spherebot/spherebot.glb",
    "svg": "assets/coloring/clowntriggerfish.svg",
    "sheets": {
     "ru": "assets/coloring/clowntriggerfish.svg",
     "en": "assets/coloring/clowntriggerfish.en.svg",
     "pl": "assets/coloring/clowntriggerfish.pl.svg"
    },
-   "length": 2.1,
+   "length": 1.8,
    "markers": {
     "tl": [
      0,
@@ -1885,20 +1885,20 @@
   {
    "id": 5,
    "name": "frenchangelfish",
-   "title": "Французский ангел",
+   "title": "Робот-ангел",
    "titles": {
-    "ru": "Французский ангел",
-    "en": "French angelfish",
-    "pl": "Pomakant francuski"
+    "ru": "Робот-ангел",
+    "en": "Angel Bot",
+    "pl": "Robot-anioł"
    },
-   "model": "/assets/models/pack/frenchangelfish/frenchangelfish.gltf",
+   "model": "/assets/models/pack/spherebot/spherebot.glb",
    "svg": "assets/coloring/frenchangelfish.svg",
    "sheets": {
     "ru": "assets/coloring/frenchangelfish.svg",
     "en": "assets/coloring/frenchangelfish.en.svg",
     "pl": "assets/coloring/frenchangelfish.pl.svg"
    },
-   "length": 2.4,
+   "length": 1.8,
    "markers": {
     "tl": [
      0,
@@ -2430,20 +2430,20 @@
   {
    "id": 6,
    "name": "fusilierfish",
-   "title": "Цезио",
+   "title": "Робот-разведчик",
    "titles": {
-    "ru": "Цезио",
-    "en": "Fusilier",
-    "pl": "Cezjo"
+    "ru": "Робот-разведчик",
+    "en": "Scout Bot",
+    "pl": "Robot-zwiadowca"
    },
-   "model": "/assets/models/pack/fusilierfish/fusilierfish.gltf",
+   "model": "/assets/models/pack/spherebot/spherebot.glb",
    "svg": "assets/coloring/fusilierfish.svg",
    "sheets": {
     "ru": "assets/coloring/fusilierfish.svg",
     "en": "assets/coloring/fusilierfish.en.svg",
     "pl": "assets/coloring/fusilierfish.pl.svg"
    },
-   "length": 1.6,
+   "length": 1.8,
    "markers": {
     "tl": [
      0,
@@ -2811,20 +2811,20 @@
   {
    "id": 7,
    "name": "blackspottedsweetlips",
-   "title": "Ворчун",
+   "title": "Робот-страж",
    "titles": {
-    "ru": "Ворчун",
-    "en": "Sweetlips",
-    "pl": "Chrząkiew"
+    "ru": "Робот-страж",
+    "en": "Guardian Bot",
+    "pl": "Robot-strażnik"
    },
-   "model": "/assets/models/pack/blackspottedsweetlips/blackspottedsweetlips.gltf",
+   "model": "/assets/models/pack/spherebot/spherebot.glb",
    "svg": "assets/coloring/blackspottedsweetlips.svg",
    "sheets": {
     "ru": "assets/coloring/blackspottedsweetlips.svg",
     "en": "assets/coloring/blackspottedsweetlips.en.svg",
     "pl": "assets/coloring/blackspottedsweetlips.pl.svg"
    },
-   "length": 2.3,
+   "length": 1.8,
    "markers": {
     "tl": [
      0,
@@ -3212,20 +3212,20 @@
   {
    "id": 8,
    "name": "coralgrouper",
-   "title": "Групер",
+   "title": "Робот-охотник",
    "titles": {
-    "ru": "Групер",
-    "en": "Coral grouper",
-    "pl": "Strzępiel koralowy"
+    "ru": "Робот-охотник",
+    "en": "Hunter Bot",
+    "pl": "Robot-łowca"
    },
-   "model": "/assets/models/pack/coralgrouper/coralgrouper.gltf",
+   "model": "/assets/models/pack/spherebot/spherebot.glb",
    "svg": "assets/coloring/coralgrouper.svg",
    "sheets": {
     "ru": "assets/coloring/coralgrouper.svg",
     "en": "assets/coloring/coralgrouper.en.svg",
     "pl": "assets/coloring/coralgrouper.pl.svg"
    },
-   "length": 2.6,
+   "length": 1.8,
    "markers": {
     "tl": [
      0,
@@ -3613,13 +3613,13 @@
   {
    "id": 9,
    "name": "browntang",
-   "title": "Бурый хирург",
+   "title": "Робот-следопыт",
    "titles": {
-    "ru": "Бурый хирург",
-    "en": "Brown tang",
-    "pl": "Chirurg brązowy"
+    "ru": "Робот-следопыт",
+    "en": "Tracker Bot",
+    "pl": "Robot-tropiciel"
    },
-   "model": "/assets/models/pack/browntang/browntang.gltf",
+   "model": "/assets/models/pack/spherebot/spherebot.glb",
    "svg": "assets/coloring/browntang.svg",
    "sheets": {
     "ru": "assets/coloring/browntang.svg",
@@ -4046,20 +4046,20 @@
   {
    "id": 10,
    "name": "bicolorangelfish",
-   "title": "Двухцветный ангел",
+   "title": "Робот-защитник",
    "titles": {
-    "ru": "Двухцветный ангел",
-    "en": "Bicolor angelfish",
-    "pl": "Pomakant dwubarwny"
+    "ru": "Робот-защитник",
+    "en": "Defender Bot",
+    "pl": "Robot-obrońca"
    },
-   "model": "/assets/models/pack/bicolorangelfish/bicolorangelfish.gltf",
+   "model": "/assets/models/pack/spherebot/spherebot.glb",
    "svg": "assets/coloring/bicolorangelfish.svg",
    "sheets": {
     "ru": "assets/coloring/bicolorangelfish.svg",
     "en": "assets/coloring/bicolorangelfish.en.svg",
     "pl": "assets/coloring/bicolorangelfish.pl.svg"
    },
-   "length": 1.7,
+   "length": 1.8,
    "markers": {
     "tl": [
      0,
@@ -4475,20 +4475,20 @@
   {
    "id": 11,
    "name": "bluecheekbutterflyfish",
-   "title": "Рыба-бабочка",
+   "title": "Робот-бабочка",
    "titles": {
-    "ru": "Рыба-бабочка",
-    "en": "Butterflyfish",
-    "pl": "Motylek"
+    "ru": "Робот-бабочка",
+    "en": "Butterfly Bot",
+    "pl": "Robot-motyl"
    },
-   "model": "/assets/models/pack/bluecheekbutterflyfish/bluecheekbutterflyfish.gltf",
+   "model": "/assets/models/pack/spherebot/spherebot.glb",
    "svg": "assets/coloring/bluecheekbutterflyfish.svg",
    "sheets": {
     "ru": "assets/coloring/bluecheekbutterflyfish.svg",
     "en": "assets/coloring/bluecheekbutterflyfish.en.svg",
     "pl": "assets/coloring/bluecheekbutterflyfish.pl.svg"
    },
-   "length": 1.5,
+   "length": 1.8,
    "markers": {
     "tl": [
      0,
@@ -4928,13 +4928,13 @@
   {
    "id": 12,
    "name": "discus1",
-   "title": "Дискус",
+   "title": "Робот-диск",
    "titles": {
-    "ru": "Дискус",
-    "en": "Discus",
-    "pl": "Paletka"
+    "ru": "Робот-диск",
+    "en": "Disc Bot",
+    "pl": "Robot-dysk"
    },
-   "model": "/assets/models/pack/discus1/discus1.gltf",
+   "model": "/assets/models/pack/spherebot/spherebot.glb",
    "svg": "assets/coloring/discus1.svg",
    "sheets": {
     "ru": "assets/coloring/discus1.svg",
