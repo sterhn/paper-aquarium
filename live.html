@@ -30,7 +30,6 @@
   }
   .taphint[hidden] { display: none; }
 
-  /* ── menu ─────────────────────────────────────────────────────────────── */
   .menu {
     position: fixed; inset: 0; z-index: 15;
     display: grid; place-items: center; padding: 16px;
@@ -81,7 +80,6 @@
   }
   .menu .x:hover { color: var(--ink); background: rgba(88, 214, 255, 0.2); border-color: rgba(140, 200, 255, 0.45); }
 
-  /* ── background picker ──────────────────────────────────────────────── */
   .menu .goback {
     display: inline-block; margin: 0 0 10px; padding: 0;
     font: inherit; color: var(--muted); background: none; border: 0; cursor: pointer;
@@ -122,7 +120,7 @@
 </head>
 <body>
 
-<div class="taphint" id="taphint" hidden></div>
+<div class="taphint" id="taphint"></div>
 
 <div class="menu" id="menu" hidden>
   <div class="card" id="menu-card">
@@ -157,10 +155,6 @@
 </div>
 
 <script src="vendor/three.min.js"></script>
-<script src="vendor/GLTFLoader.js"></script>
-<script src="vendor/DRACOLoader.js"></script>
-<script src="vendor/SkeletonUtils.js"></script>
-<script src="assets/fish-frame.js"></script>
 <script>
 (function () {
   'use strict';
@@ -177,7 +171,7 @@
         var w = (m === 1 && h !== 11) ? 'робот' : (m >= 2 && m <= 4 && (h < 12 || h > 14)) ? 'робота' : 'роботов';
         return n + ' ' + w;
       },
-      add: 'Запустить робота', addSub: 'из набора, без раскрашивания',
+      add: 'Запустить робота', addSub: 'добавить нового',
       feed: 'Подзарядить', feedSub: 'роботы соберутся на подзарядку',
       bg: 'Сменить фон', bgSub: 'картинка, на фоне которой двигаются роботы',
       bgTitle: 'Выбери фон', back: '← назад'
@@ -187,21 +181,21 @@
       hint: 'tap anywhere',
       count0: 'no robots yet',
       count: function (n) { return n + ' robot' + (n !== 1 ? 's' : ''); },
-      add: 'Add a robot', addSub: 'from the collection, with default skin',
+      add: 'Add a robot', addSub: 'add a new one',
       feed: 'Recharge', feedSub: 'robots gather for a charge-up',
       bg: 'Change background', bgSub: 'the image behind the robots',
       bgTitle: 'Pick a background', back: '← back'
     },
     pl: {
       title: 'Akwarium',
-      hint: 'dotkij dowolne miejsce',
+      hint: 'dotknij dowolne miejsce',
       count0: 'jeszcze nie ma robotów',
       count: function (n) {
         var m = n % 10, h = n % 100;
         var w = (n === 1) ? 'robot' : (m >= 2 && m <= 4 && (h < 12 || h > 14)) ? 'roboty' : 'robotów';
         return n + ' ' + w;
       },
-      add: 'Dodaj robota', addSub: 'z kolekcji, bez malowania',
+      add: 'Dodaj robota', addSub: 'dodaj nowego',
       feed: 'Naładuj', feedSub: 'roboty zbiorą się na ładowanie',
       bg: 'Zmień tło', bgSub: 'obrazek za robotami',
       bgTitle: 'Wybierz tło', back: '← wstecz'
@@ -248,10 +242,8 @@
     });
   }
 
-  // ── scene constants ───────────────────────────────────────────────────
-  var MODEL_URL = 'assets/models/pack/spherebot/spherebot.glb';
+  // ── constants ─────────────────────────────────────────────────────────
   var MAX_ROBOTS = 20;
-
   var BACKGROUNDS = [
     'assets/backgrounds/webp/01-0.webp',
     'assets/backgrounds/webp/01-1.webp',
@@ -263,22 +255,19 @@
     'assets/backgrounds/webp/05-0.webp',
     'assets/backgrounds/webp/05-1.webp'
   ];
+  var COLORS = [0x58d6ff, 0xff6b8a, 0x6bff8a, 0xffd66b, 0xd66bff, 0xff8a6b, 0x6bd6ff, 0x8aff6b, 0xff6bd6];
 
-  var Z_NEAR = 6, Z_FAR = -18, FLOOR = 0, LIT_DEPTH = 12.4;
+  var Z_NEAR = 6, Z_FAR = -18, FLOOR = 0;
   var MARGIN = 1.6, FLOOR_ROOM = 0.9;
   var CAM_POS = [0, 6.5, 17.5], CAM_TARGET = [0, 6.5, 0];
   var FOV = 42;
   var TAN_HALF_FOV = Math.tan(FOV / 2 * Math.PI / 180);
-  var BEATS_PER_LENGTH = 0.85;
 
   var renderer, scene, camera, clock;
-  var fishes = [];
+  var robots = [];
   var foods = [], foodGeo, foodMat;
-  var uTime = { value: 0 };
-  var caustics = { value: 1 };
-  var baseGLTF = null;
-  var baseInfo = null;
   var currentBg = 0;
+  var cubeGeo;
 
   var FOOD_MAX = 220;
   var FOOD_REACH = 0.9;
@@ -305,230 +294,16 @@
     return { hw: half * aspect, yTop: yc + half, yBot: Math.max(FLOOR + FLOOR_ROOM, yc - half) };
   }
 
-  // ── caustic shader ──────────────────────────────────────────────────────
-  var CAUSTIC_GLSL = [
-    'float causticPattern(vec2 p, float t) {',
-    '  vec2 q = p * 0.55;',
-    '  float c = 0.0;',
-    '  for (int i = 0; i < 3; i++) {',
-    '    float fi = float(i) + 1.0;',
-    '    q += 0.42 * vec2(sin(q.y * 1.35 + t * 1.05 * fi), cos(q.x * 1.6 + t * 0.9 * fi));',
-    '    c += 0.32 / (abs(sin(q.x) * sin(q.y)) * 3.3 + 0.32);',
-    '  }',
-    '  return pow(clamp(c * 0.16, 0.0, 1.0), 2.5);',
-    '}'
-  ].join('\n');
-
-  function addCaustics(mat, strength) {
-    mat.onBeforeCompile = function (shader) {
-      shader.uniforms.uTime = uTime;
-      shader.uniforms.uCaustics = caustics;
-      shader.vertexShader = 'varying vec3 vWPos;\n' + shader.vertexShader.replace(
-        '#include <begin_vertex>',
-        '#include <begin_vertex>\n  vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;'
-      );
-      shader.fragmentShader = 'varying vec3 vWPos;\nuniform float uTime;\nuniform float uCaustics;\n' +
-        CAUSTIC_GLSL + '\n' + shader.fragmentShader.replace(
-          '#include <map_fragment>',
-          [
-            '#include <map_fragment>',
-            'float caus = causticPattern(vWPos.xz, uTime * 0.35);',
-            'float depthFade = 1.0 - clamp(vWPos.y / ' + LIT_DEPTH.toFixed(1) + ', 0.0, 1.0) * 0.65;',
-            'diffuseColor.rgb += vec3(0.45, 0.72, 0.85) * caus * ' + strength.toFixed(2) + ' * uCaustics * depthFade;'
-          ].join('\n')
-        );
-    };
-    mat.customProgramCacheKey = function () { return 'caustic' + strength; };
-    return mat;
-  }
-
-  // ── orientation ─────────────────────────────────────────────────────────
-  function axisVec(name, sign) {
-    return new THREE.Vector3(name === 'x' ? sign : 0, name === 'y' ? sign : 0, name === 'z' ? sign : 0);
-  }
-  function maskVec(name) { return axisVec(name, 1); }
-
-  function fishFrame(root, useWorld, axes) {
-    var box = new THREE.Box3(), sum = new THREE.Vector3(), v = new THREE.Vector3(), n = 0;
-    root.traverse(function (o) {
-      if (!o.isMesh) return;
-      var p = o.geometry.attributes.position;
-      for (var i = 0; i < p.count; i++) {
-        v.fromBufferAttribute(p, i);
-        if (useWorld) v.applyMatrix4(o.matrixWorld);
-        box.expandByPoint(v); sum.add(v); n++;
-      }
+  // ── Robot class ────────────────────────────────────────────────────────
+  function Robot() {
+    var color = COLORS[robots.length % COLORS.length];
+    var mat = new THREE.MeshStandardMaterial({
+      color: color, roughness: 0.5, metalness: 0,
+      emissive: color, emissiveIntensity: 0.15
     });
-    var size = box.getSize(new THREE.Vector3());
-    var center = box.getCenter(new THREE.Vector3());
-    var centroid = sum.divideScalar(Math.max(n, 1));
-    var order = [['x', size.x], ['y', size.y], ['z', size.z]].sort(function (a, b) { return b[1] - a[1]; });
-    var body = order[0][0], up = order[1][0], lat = order[2][0];
-    if (axes) { body = axes.body; up = axes.up; lat = axes.lat; }
-    var span = size[body] || 1;
-    var thickLow = 0, thickHigh = 0;
-    root.traverse(function (o) {
-      if (!o.isMesh) return;
-      var p = o.geometry.attributes.position;
-      for (var i = 0; i < p.count; i++) {
-        v.fromBufferAttribute(p, i);
-        if (useWorld) v.applyMatrix4(o.matrixWorld);
-        var tt = (v[body] - box.min[body]) / span;
-        var lateral = Math.abs(v[lat] - center[lat]);
-        if (tt < 0.18) thickLow = Math.max(thickLow, lateral);
-        else if (tt > 0.82) thickHigh = Math.max(thickHigh, lateral);
-      }
-    });
-    return {
-      box: box, size: size, center: center,
-      body: body, up: up, lat: lat,
-      headAtMax: thickHigh > thickLow,
-      dorsalPositive: FishFrame.dorsalPositive(up, centroid, center)
-    };
-  }
-
-  function normalizeFish(root, targetLen, skel) {
-    root.updateWorldMatrix(true, true);
-    var axes = skel && skel.axes;
-    var w = fishFrame(root, true, axes);
-    var local = fishFrame(root, false, axes);
-    if (skel && typeof skel.headAtMax === 'boolean') {
-      w.headAtMax = skel.headAtMax; local.headAtMax = skel.headAtMax;
-    }
-    var forward = axisVec(w.body, w.headAtMax ? 1 : -1);
-    var upVec = axisVec(w.up, w.dorsalPositive ? 1 : -1);
-    var right = new THREE.Vector3().crossVectors(upVec, forward);
-    var basis = new THREE.Matrix4().makeBasis(right, upVec, forward);
-    var quat = new THREE.Quaternion().setFromRotationMatrix(basis).invert();
-    root.position.sub(w.center);
-    return {
-      quat: quat, scale: targetLen / (w.size[w.body] || 1),
-      bodyMask: maskVec(local.body), latMask: maskVec(local.lat),
-      range: [local.box.min[local.body], local.box.max[local.body]],
-      headAtMax: local.headAtMax
-    };
-  }
-
-  // ── strip root motion ───────────────────────────────────────────────────
-  function stripRootMotion(clip, modelSize) {
-    var dominated = [];
-    clip.tracks.forEach(function (tr) {
-      if (!(tr instanceof THREE.VectorKeyframeTrack)) return;
-      var v = tr.values, n = v.length / 3;
-      var lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
-      for (var i = 0; i < n; i++) for (var c = 0; c < 3; c++) {
-        if (v[i * 3 + c] < lo[c]) lo[c] = v[i * 3 + c];
-        if (v[i * 3 + c] > hi[c]) hi[c] = v[i * 3 + c];
-      }
-      var move = Math.sqrt(
-        Math.pow(hi[0] - lo[0], 2) + Math.pow(hi[1] - lo[1], 2) + Math.pow(hi[2] - lo[2], 2));
-      if (move > modelSize * 0.3) dominated.push(tr);
-    });
-    dominated.forEach(function (tr) {
-      var idx = clip.tracks.indexOf(tr);
-      if (idx !== -1) clip.tracks.splice(idx, 1);
-    });
-  }
-
-  // ── beat detection ──────────────────────────────────────────────────────
-  var FIN_BONE = /fin|pect|dors|anal|pelv|tip/i;
-  function clipBeatHz(clip) {
-    var best = 0, bestSpan = 0;
-    for (var ti = 0; ti < clip.tracks.length; ti++) {
-      var tr = clip.tracks[ti];
-      if (!(tr instanceof THREE.QuaternionKeyframeTrack)) continue;
-      if (FIN_BONE.test(tr.name)) continue;
-      var v = tr.values, n = v.length / 4;
-      if (n < 4) continue;
-      for (var c = 0; c < 3; c++) {
-        var min = Infinity, max = -Infinity, sum = 0;
-        for (var i = 0; i < n; i++) {
-          var x = v[i * 4 + c];
-          if (x < min) min = x; if (x > max) max = x; sum += x;
-        }
-        var span = max - min;
-        if (span <= bestSpan) continue;
-        var mean = sum / n, cross = 0;
-        for (var j = 1; j < n; j++) {
-          if ((v[(j - 1) * 4 + c] - mean) * (v[j * 4 + c] - mean) < 0) cross++;
-        }
-        var dur = tr.times[tr.times.length - 1] || 1;
-        bestSpan = span; best = cross / 2 / dur;
-      }
-    }
-    return best > 0.05 ? best : 0;
-  }
-
-  // ── bend shader ─────────────────────────────────────────────────────────
-  function addBend(mat, info, amp, phase) {
-    var uniforms = {
-      uTime: uTime, uAmp: { value: amp }, uPhase: { value: phase },
-      uBodyMask: { value: info.bodyMask }, uLatMask: { value: info.latMask },
-      uRange: { value: new THREE.Vector2(info.range[0], info.range[1]) },
-      uHeadAtMax: { value: info.headAtMax ? 1 : 0 }
-    };
-    var prev = mat.onBeforeCompile;
-    mat.onBeforeCompile = function (shader) {
-      if (prev) prev.call(this, shader);
-      Object.keys(uniforms).forEach(function (k) { shader.uniforms[k] = uniforms[k]; });
-      shader.vertexShader =
-        'uniform float uTime; uniform float uAmp; uniform float uPhase;\n' +
-        'uniform vec3 uBodyMask; uniform vec3 uLatMask;\n' +
-        'uniform vec2 uRange; uniform float uHeadAtMax;\n' +
-        shader.vertexShader.replace('#include <begin_vertex>', [
-          '#include <begin_vertex>',
-          'float a = dot(transformed, uBodyMask);',
-          'float span = max(uRange.y - uRange.x, 0.0001);',
-          'float k = uHeadAtMax > 0.5 ? (uRange.y - a) / span : (a - uRange.x) / span;',
-          'k = clamp(k, 0.0, 1.0); k *= k;',
-          'float w = sin(uTime * 5.5 + uPhase + k * 3.2) * uAmp * k * span * 0.25;',
-          'transformed += uLatMask * w;'
-        ].join('\n'));
-    };
-    mat.customProgramCacheKey = function () { return prev ? 'paint+bend' : 'bend'; };
-  }
-
-  // ── spawn ───────────────────────────────────────────────────────────────
-  function spawnFromModel(gltf, info) {
-    var clone = THREE.SkeletonUtils.clone(gltf.scene);
-    var pivot = new THREE.Group();
-    pivot.quaternion.copy(info.quat);
-    pivot.scale.setScalar(info.scale);
-    pivot.add(clone);
-    var mixer = null, beatHz = 0;
-    if (gltf.animations && gltf.animations.length) {
-      mixer = new THREE.AnimationMixer(clone);
-      var clip = gltf.animations[0];
-      beatHz = clipBeatHz(clip);
-      var act = mixer.clipAction(clip);
-      act.time = Math.random() * 2;
-      act.play();
-    }
-    var phase = Math.random() * 6.28;
-    clone.traverse(function (o) {
-      if (!o.isMesh) return;
-      o.material = addCaustics(o.material.clone(), 0.5);
-      o.material.metalness = 0;
-      o.material.roughness = 0.7;
-      o.material.envMapIntensity = 0;
-      var bend = beatHz ? 0 : 0.35;
-      if (bend > 0) addBend(o.material, info, bend, phase);
-    });
-    var group = new THREE.Group();
-    group.add(pivot);
-    return { group: group, mixer: mixer, phase: phase, beatHz: beatHz };
-  }
-
-  // ── Fish class ──────────────────────────────────────────────────────────
-  function Fish(gltf, info, len) {
-    var built = spawnFromModel(gltf, info);
-    this.mesh = built.group;
-    this.mixer = built.mixer;
-    this.beatHz = built.beatHz;
-    this.len = len;
-    this.radius = len * 0.5;
+    this.mesh = new THREE.Mesh(cubeGeo, mat);
     this.speed = 1.2 + Math.random() * 0.6;
-    this.phase = built.phase;
+    this.phase = Math.random() * 6.28;
     this.noticeFood = 5 + Math.random() * 8;
     this.fullUntil = 0;
 
@@ -546,7 +321,7 @@
   }
 
   var _a = new THREE.Vector3(), _l = new THREE.Vector3(), _d = new THREE.Vector3();
-  Fish.prototype.update = function (dt, t) {
+  Robot.prototype.update = function (dt, t) {
     _a.set(
       Math.sin(t * 0.42 + this.phase) * 0.5,
       Math.sin(t * 0.3 + this.phase * 1.6) * 0.22,
@@ -589,21 +364,11 @@
     this.pos.addScaledVector(this.vel, dt);
     this.mesh.position.copy(this.pos);
     this.mesh.lookAt(_l.copy(this.pos).add(this.vel));
-    this.mesh.rotation.z += Math.sin(t * 2.5 + this.phase) * 0.015;
-
-    if (this.mixer) {
-      var scale;
-      if (this.beatHz) {
-        var want = BEATS_PER_LENGTH * this.vel.length() / this.len;
-        scale = want / this.beatHz;
-      } else {
-        scale = 0.6 + this.vel.length() / this.speed * 0.6;
-      }
-      this.mixer.update(dt * Math.max(0.25, Math.min(2, scale)));
-    }
+    this.mesh.rotation.z += Math.sin(t * 2.5 + this.phase) * 0.04;
+    this.mesh.rotation.x += Math.sin(t * 1.8 + this.phase * 0.7) * 0.02;
   };
 
-  // ── food ────────────────────────────────────────────────────────────────
+  // ── food ───────────────────────────────────────────────────────────────
   function eatNear(pos, max) {
     var ate = 0;
     for (var i = foods.length - 1; i >= 0 && ate < max; i--) {
@@ -663,7 +428,7 @@
     }
   }
 
-  // ── background ──────────────────────────────────────────────────────────
+  // ── background ─────────────────────────────────────────────────────────
   function fitBackground() {
     var tex = scene.background;
     if (!tex || !tex.isTexture || !tex.image || !tex.image.width) return;
@@ -680,25 +445,9 @@
     }
   }
 
-  function makeGradientBg() {
-    var c = document.createElement('canvas');
-    c.width = 256; c.height = 256;
-    var ctx = c.getContext('2d');
-    var g = ctx.createLinearGradient(0, 0, 0, 256);
-    g.addColorStop(0, '#0a3d5c');
-    g.addColorStop(0.5, '#0c2a3e');
-    g.addColorStop(1, '#061820');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 2, 256);
-    var tex = new THREE.CanvasTexture(c);
-    tex.encoding = THREE.sRGBEncoding;
-    return tex;
-  }
-
   function applyBackground(url) {
     if (!url) {
-      scene.background = makeGradientBg();
-      fitBackground();
+      scene.background = new THREE.Color(0x0a3d5c);
       return;
     }
     new THREE.TextureLoader().load(url, function (tex) {
@@ -706,85 +455,57 @@
       scene.background = tex;
       fitBackground();
     }, undefined, function () {
-      scene.background = makeGradientBg();
-      fitBackground();
+      scene.background = new THREE.Color(0x0a3d5c);
     });
   }
 
-  // ── scene ───────────────────────────────────────────────────────────────
+  // ── scene ──────────────────────────────────────────────────────────────
   function init() {
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
     renderer.setSize(innerWidth, innerHeight);
     renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.92;
+    renderer.toneMappingExposure = 1.0;
     document.body.appendChild(renderer.domElement);
 
     scene = new THREE.Scene();
-    scene.background = makeGradientBg();
-    scene.fog = new THREE.Fog(0x2e86a8, 14, 60);
+    scene.background = new THREE.Color(0x0a3d5c);
+    scene.fog = new THREE.Fog(0x2e86a8, 18, 55);
 
     camera = new THREE.PerspectiveCamera(FOV, innerWidth / innerHeight, 0.1, 300);
     camera.position.fromArray(CAM_POS);
     camera.lookAt(new THREE.Vector3().fromArray(CAM_TARGET));
 
-    scene.add(new THREE.HemisphereLight(0x8ec8e8, 0x1a3a4a, 0.6));
-    scene.add(new THREE.AmbientLight(0x446688, 0.4));
-    var spot = new THREE.SpotLight(0xe8f7ff, 3.0, 48, 0.62, 0.42, 1.1);
+    scene.add(new THREE.HemisphereLight(0x8ec8e8, 0x1a3a4a, 0.7));
+    scene.add(new THREE.AmbientLight(0x446688, 0.5));
+    var spot = new THREE.SpotLight(0xe8f7ff, 2.5, 48, 0.62, 0.42, 1.1);
     spot.position.set(0, 15.2, -1.5);
     spot.target.position.set(0, 0, 0);
     scene.add(spot, spot.target);
-    var fill = new THREE.DirectionalLight(0x9fc9e0, 0.5);
+    var fill = new THREE.DirectionalLight(0x9fc9e0, 0.6);
     fill.position.set(12, 8, 20);
     scene.add(fill);
 
+    cubeGeo = new THREE.BoxGeometry(0.9, 0.9, 0.9, 1, 1, 1);
+
     applyBackground(BACKGROUNDS[currentBg]);
+
+    for (var i = 0; i < 3; i++) addRobot();
+    updateCount();
 
     clock = new THREE.Clock();
     addEventListener('resize', onResize);
-
-    loadModel();
     animate();
   }
 
-  function loadModel() {
-    var loader = new THREE.GLTFLoader();
-    if (THREE.DRACOLoader) {
-      var draco = new THREE.DRACOLoader();
-      draco.setDecoderPath('vendor/draco/');
-      loader.setDRACOLoader(draco);
-    }
-    loader.load(MODEL_URL, function (gltf) {
-      var junk = /^(Plane|Hemi|Cube)$/i;
-      var toRemove = [];
-      gltf.scene.traverse(function (o) {
-        if (junk.test(o.name)) toRemove.push(o);
-      });
-      toRemove.forEach(function (o) { if (o.parent) o.parent.remove(o); });
-
-      var skel = FishFrame.fromSkeleton(gltf);
-      var info = normalizeFish(gltf.scene, 1.8, skel);
-      var b = FishFrame.bounds(gltf.scene);
-      (gltf.animations || []).forEach(function (clip) {
-        stripRootMotion(clip, Math.max(b.size.x, b.size.y, b.size.z));
-      });
-      baseGLTF = gltf;
-      baseInfo = info;
-      for (var i = 0; i < 3; i++) addRobot();
-      updateCount();
-
-      document.getElementById('taphint').hidden = false;
-    });
-  }
-
   function addRobot() {
-    if (!baseGLTF || fishes.length >= MAX_ROBOTS) return;
-    fishes.push(new Fish(baseGLTF, baseInfo, 1.8));
+    if (robots.length >= MAX_ROBOTS) return;
+    robots.push(new Robot());
   }
 
   function updateCount() {
-    var n = fishes.length;
+    var n = robots.length;
     document.getElementById('m-count').textContent = n ? t('count')(n) : t('count0');
   }
 
@@ -792,8 +513,7 @@
     requestAnimationFrame(animate);
     var dt = Math.min(clock.getDelta(), 0.05);
     var ti = clock.elapsedTime;
-    uTime.value = ti;
-    for (var i = 0; i < fishes.length; i++) fishes[i].update(dt, ti);
+    for (var i = 0; i < robots.length; i++) robots[i].update(dt, ti);
     updateFoods(dt, ti);
     renderer.render(scene, camera);
   }
@@ -805,7 +525,7 @@
     fitBackground();
   }
 
-  // ── menu ────────────────────────────────────────────────────────────────
+  // ── menu ───────────────────────────────────────────────────────────────
   var menu = document.getElementById('menu');
   var menuCard = document.getElementById('menu-card');
   var menuMain = document.getElementById('menu-main');
@@ -813,25 +533,10 @@
   var taphint = document.getElementById('taphint');
   var menuUsed = false;
 
-  function showMenu() {
-    menu.hidden = false;
-    taphint.hidden = true;
-    updateCount();
-  }
-  function hideMenu() {
-    showMainView();
-    menu.hidden = true;
-    if (!menuUsed) taphint.hidden = false;
-  }
-  function toggleMenu() {
-    menuUsed = true;
-    if (menu.hidden) showMenu(); else hideMenu();
-  }
-
-  function showMainView() {
-    menuMain.hidden = false;
-    menuBgPick.hidden = true;
-  }
+  function showMenu() { menu.hidden = false; taphint.hidden = true; updateCount(); }
+  function hideMenu() { showMainView(); menu.hidden = true; if (!menuUsed) taphint.hidden = false; }
+  function toggleMenu() { menuUsed = true; if (menu.hidden) showMenu(); else hideMenu(); }
+  function showMainView() { menuMain.hidden = false; menuBgPick.hidden = true; }
 
   document.addEventListener('click', function (e) {
     if (menuCard.contains(e.target)) return;
@@ -841,35 +546,26 @@
     if (e.key === 'Escape' && !menu.hidden) hideMenu();
   });
 
-  document.getElementById('m-close').onclick = function (e) {
-    e.stopPropagation();
-    hideMenu();
-  };
+  document.getElementById('m-close').onclick = function (e) { e.stopPropagation(); hideMenu(); };
 
   document.getElementById('m-add').onclick = function (e) {
     e.stopPropagation();
-    if (fishes.length >= MAX_ROBOTS) return;
-    addRobot();
-    updateCount();
-    hideMenu();
+    if (robots.length >= MAX_ROBOTS) return;
+    addRobot(); updateCount(); hideMenu();
   };
 
   document.getElementById('m-feed').onclick = function (e) {
-    e.stopPropagation();
-    hideMenu();
-    feedNow();
+    e.stopPropagation(); hideMenu(); feedNow();
   };
 
-  // ── background picker ──────────────────────────────────────────────────
+  // ── background picker ─────────────────────────────────────────────────
   document.getElementById('m-bg').onclick = function (e) {
     e.stopPropagation();
-    menuMain.hidden = true;
-    menuBgPick.hidden = false;
+    menuMain.hidden = true; menuBgPick.hidden = false;
     buildBgGrid();
   };
   document.getElementById('m-bgback').onclick = function (e) {
-    e.stopPropagation();
-    showMainView();
+    e.stopPropagation(); showMainView();
   };
 
   var bgGridBuilt = false;
@@ -882,9 +578,7 @@
       btn.type = 'button';
       if (idx === currentBg) btn.className = 'active';
       var img = document.createElement('img');
-      img.src = url;
-      img.alt = '';
-      img.loading = 'lazy';
+      img.src = url; img.alt = ''; img.loading = 'lazy';
       btn.appendChild(img);
       btn.onclick = function (e) {
         e.stopPropagation();
@@ -897,7 +591,7 @@
     });
   }
 
-  // ── init ────────────────────────────────────────────────────────────────
+  // ── init ───────────────────────────────────────────────────────────────
   mountLang();
   applyLang();
   init();
