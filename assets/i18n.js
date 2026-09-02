@@ -198,6 +198,12 @@
       'cap.err.status': 'Сервер ответил {code}',
       'cap.err.markers': 'Нашёл меток: {n} из 4. Сфотографируй весь лист целиком, при хорошем свете и без бликов — все четыре чёрных квадрата должны быть в кадре.',
       'cap.err.send': 'Не получилось отправить: {msg}',
+      'cap.draw': 'Нарисовать вместо фото',
+      'cap.draw.size': 'Толщина',
+      'cap.draw.erase': '⬜ Ластик',
+      'cap.draw.clear': 'Стереть всё',
+      'cap.draw.done': 'Предпросмотр →',
+      'cap.draw.back': '← Назад',
 
       // ── управление ──
       'adm.doctitle': 'Аквариум — управление роботами',
@@ -434,6 +440,12 @@
       'cap.err.status': 'The server answered {code}',
       'cap.err.markers': 'Found {n} markers out of 4. Photograph the whole sheet, in good light and without glare — all four black squares have to be in the frame.',
       'cap.err.send': 'Sending failed: {msg}',
+      'cap.draw': 'Draw instead of a photo',
+      'cap.draw.size': 'Size',
+      'cap.draw.erase': '⬜ Eraser',
+      'cap.draw.clear': 'Clear all',
+      'cap.draw.done': 'Preview →',
+      'cap.draw.back': '← Back',
 
       'adm.doctitle': 'Aquarium — managing the robots',
       'adm.title': 'management',
@@ -667,6 +679,12 @@
       'cap.err.status': 'Serwer odpowiedział {code}',
       'cap.err.markers': 'Znalazłem {n} znaczniki z 4. Sfotografuj całą kartkę, przy dobrym świetle i bez odblasków — wszystkie cztery czarne kwadraty muszą być w kadrze.',
       'cap.err.send': 'Nie udało się wysłać: {msg}',
+      'cap.draw': 'Narysuj zamiast zdjęcia',
+      'cap.draw.size': 'Grubość',
+      'cap.draw.erase': '⬜ Gumka',
+      'cap.draw.clear': 'Wyczyść',
+      'cap.draw.done': 'Podgląd →',
+      'cap.draw.back': '← Cofnij',
 
       'adm.doctitle': 'Akwarium — zarządzanie robotami',
       'adm.title': 'zarządzanie',

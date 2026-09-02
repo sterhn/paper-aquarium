@@ -110,6 +110,35 @@
   }
   .hintline { color: var(--muted); font-size: 13px; margin-top: 22px; }
 
+  /* ── рисование ─────────────────────────────────────────────────────────── */
+  .draw-wrap {
+    width: 100%; max-width: 280px; margin: 10px auto 0;
+    border-radius: 12px; overflow: hidden;
+    border: 1px solid rgba(140, 200, 255, 0.25);
+  }
+  #draw-canvas { display: block; width: 100%; height: auto; touch-action: none; cursor: crosshair; }
+  .palette {
+    display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+    margin: 12px 0 0; padding: 0 4px;
+  }
+  .swatch {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.2); cursor: pointer; flex: none;
+    padding: 0; appearance: none;
+  }
+  .swatch.active { border-color: #fff; box-shadow: 0 0 0 3px var(--accent); }
+  .drawrow {
+    display: flex; align-items: center; gap: 10px; margin: 10px 2px 0;
+  }
+  .drawrow label { font-size: 13px; color: var(--muted); flex: none; }
+  .drawrow input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .icon-btn {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(140,200,255,0.25);
+    border-radius: 8px; color: var(--ink); font-size: 13px;
+    padding: 6px 10px; cursor: pointer; flex: none;
+  }
+  .icon-btn.active { background: rgba(88,214,255,0.18); border-color: var(--accent); }
+
   /* Мост на телефон для больших экранов: выбор файла на компьютере — тупик,
      а камера всегда в кармане. Белая подложка обязательна: без неё сканер
      не видит код на тёмном. */
@@ -139,10 +168,26 @@
   <label class="big" for="file" data-t="cap.shoot"></label>
   <input type="file" id="file" accept="image/*" capture="environment">
   <p class="hintline" data-t="cap.hint"></p>
+  <button class="big ghost" id="b-draw" data-t="cap.draw"></button>
   <div class="qrrow" id="qrrow" hidden>
     <span class="qrbox" id="cap-qr"></span>
     <span class="qrtext" data-t="cap.qr"></span>
   </div>
+</div>
+
+<!-- рисование -->
+<div class="screen" id="s-draw">
+  <p class="fishname" id="draw-name"></p>
+  <div class="draw-wrap"><canvas id="draw-canvas"></canvas></div>
+  <div class="palette" id="palette"></div>
+  <div class="drawrow">
+    <label for="brush-size" data-t="cap.draw.size"></label>
+    <input type="range" id="brush-size" min="4" max="48" value="14">
+    <button class="icon-btn" id="erase-btn" data-t="cap.draw.erase"></button>
+    <button class="icon-btn" id="clear-btn" data-t="cap.draw.clear"></button>
+  </div>
+  <button class="big green" id="b-draw-done" data-t="cap.draw.done"></button>
+  <button class="big ghost" id="b-draw-back" data-t="cap.draw.back"></button>
 </div>
 
 <!-- обработка -->
@@ -303,9 +348,13 @@
       var sz = Math.max(bb.max.z - bb.min.z, 1e-6), sy = Math.max(bb.max.y - bb.min.y, 1e-6);
       var p = geo.attributes.position;
       var uv = new Float32Array(p.count * 2);
+      // normalizeFish remaps the longest axis to Z_norm. For fish (body=Z_orig) the current
+      // U=Z_norm/V=Y_norm mapping is correct. For robots (body=Y_orig→Z_norm, depth=Z_orig→Y_norm)
+      // Z_norm is HEIGHT (should be V) and Y_norm is the lateral/depth (should be U), so swap.
+      var bodyIsOrigY = spec.info.bodyMask.y > 0.5;
       for (var i = 0; i < p.count; i++) {
-        uv[i * 2] = (p.getZ(i) - bb.min.z) / sz;
-        uv[i * 2 + 1] = (p.getY(i) - bb.min.y) / sy;
+        uv[i * 2]     = bodyIsOrigY ? (p.getY(i) - bb.min.y) / sy : (p.getZ(i) - bb.min.z) / sz;
+        uv[i * 2 + 1] = bodyIsOrigY ? (p.getZ(i) - bb.min.z) / sz : (p.getY(i) - bb.min.y) / sy;
       }
       geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
       geo.userData.range = [bb.min.z, bb.max.z];
@@ -489,6 +538,155 @@
   };
 
   document.getElementById('b-release').addEventListener('click', function () { window.releaseFish(); });
+
+  // ── рисование ───────────────────────────────────────────────────────────────
+  var DRAW_COLORS = ['#e53e3e','#dd6b20','#d69e2e','#38a169','#3182ce',
+                     '#805ad5','#d53f8c','#2d3748','#aaaaaa','#ffffff'];
+  var Draw = {
+    canvas: document.getElementById('draw-canvas'),
+    ctx: null, fish: null, clipPts: null,
+    color: '#e53e3e', size: 14, erasing: false,
+    lastX: 0, lastY: 0, down: false
+  };
+  if (Draw.canvas) Draw.ctx = Draw.canvas.getContext('2d');
+
+  function drawBuildPath() {
+    if (!Draw.clipPts) return;
+    var ctx = Draw.ctx, pts = Draw.clipPts;
+    ctx.beginPath();
+    pts.forEach(function (pt, i) { if (i === 0) ctx.moveTo(pt[0], pt[1]); else ctx.lineTo(pt[0], pt[1]); });
+    ctx.closePath();
+  }
+
+  function drawOutline() {
+    drawBuildPath(); Draw.ctx.strokeStyle = '#333'; Draw.ctx.lineWidth = 2; Draw.ctx.stroke();
+  }
+
+  function drawClear() {
+    if (!Draw.canvas || !Draw.clipPts) return;
+    var ctx = Draw.ctx, c = Draw.canvas;
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.save(); drawBuildPath(); ctx.clip();
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.restore(); drawOutline();
+  }
+
+  function drawStroke(x1, y1, x2, y2) {
+    if (!Draw.canvas || !Draw.clipPts) return;
+    var ctx = Draw.ctx;
+    var col = Draw.erasing ? '#ffffff' : Draw.color;
+    ctx.save(); drawBuildPath(); ctx.clip();
+    if (x1 === x2 && y1 === y2) {
+      ctx.beginPath(); ctx.arc(x1, y1, Draw.size / 2, 0, Math.PI * 2);
+      ctx.fillStyle = col; ctx.fill();
+    } else {
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+      ctx.strokeStyle = col; ctx.lineWidth = Draw.size;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+    }
+    ctx.restore(); drawOutline();
+  }
+
+  function drawPos(e) {
+    var rect = Draw.canvas.getBoundingClientRect();
+    var scX = Draw.canvas.width / rect.width, scY = Draw.canvas.height / rect.height;
+    var src = (e.touches && e.touches[0]) || e;
+    return [(src.clientX - rect.left) * scX, (src.clientY - rect.top) * scY];
+  }
+
+  if (Draw.canvas) {
+    Draw.canvas.addEventListener('pointerdown', function (e) {
+      e.preventDefault(); Draw.down = true;
+      var p = drawPos(e); Draw.lastX = p[0]; Draw.lastY = p[1];
+      drawStroke(p[0], p[1], p[0], p[1]);
+    });
+    Draw.canvas.addEventListener('pointermove', function (e) {
+      if (!Draw.down) return; e.preventDefault();
+      var p = drawPos(e); drawStroke(Draw.lastX, Draw.lastY, p[0], p[1]);
+      Draw.lastX = p[0]; Draw.lastY = p[1];
+    });
+    ['pointerup','pointercancel','pointerleave'].forEach(function (ev) {
+      Draw.canvas.addEventListener(ev, function () { Draw.down = false; });
+    });
+  }
+
+  function initDrawScreen() {
+    if (!manifest || !manifest.fish || !manifest.fish[0]) return;
+    var fish = manifest.fish[0];
+    Draw.fish = fish;
+    document.getElementById('draw-name').textContent =
+      I18N.t('cap.itis', { name: (fish.titles && (fish.titles[I18N.lang] || fish.titles.ru)) || fish.title });
+
+    var zRange = fish.bboxModel.z[1] - fish.bboxModel.z[0];
+    var yRange = fish.bboxModel.y[1] - fish.bboxModel.y[0];
+    var CW = 240, CH = Math.round(CW * yRange / zRange);
+    Draw.canvas.width = CW; Draw.canvas.height = CH;
+
+    Draw.clipPts = fish.contourModel.map(function (pt) {
+      return [
+        (pt[0] - fish.bboxModel.z[0]) / zRange * CW,
+        (fish.bboxModel.y[1] - pt[1]) / yRange * CH
+      ];
+    });
+
+    Draw.erasing = false;
+    document.getElementById('erase-btn').classList.remove('active');
+
+    var pal = document.getElementById('palette');
+    if (!pal.children.length) {
+      DRAW_COLORS.forEach(function (c, idx) {
+        var btn = document.createElement('button');
+        btn.className = 'swatch' + (idx === 0 ? ' active' : '');
+        btn.style.background = c;
+        if (c === '#ffffff') btn.style.border = '2px solid #888';
+        btn.addEventListener('click', function () {
+          document.querySelectorAll('.swatch').forEach(function (s) { s.classList.remove('active'); });
+          btn.classList.add('active');
+          Draw.color = c; Draw.erasing = false;
+          document.getElementById('erase-btn').classList.remove('active');
+        });
+        pal.appendChild(btn);
+      });
+    } else {
+      document.querySelectorAll('.swatch')[0].classList.add('active');
+      Draw.color = DRAW_COLORS[0];
+    }
+
+    drawClear();
+    show('s-draw');
+  }
+
+  document.getElementById('erase-btn').addEventListener('click', function () {
+    Draw.erasing = !Draw.erasing;
+    this.classList.toggle('active', Draw.erasing);
+    if (Draw.erasing) document.querySelectorAll('.swatch').forEach(function (s) { s.classList.remove('active'); });
+  });
+  document.getElementById('clear-btn').addEventListener('click', drawClear);
+  document.getElementById('brush-size').addEventListener('input', function () { Draw.size = +this.value; });
+  document.getElementById('b-draw-back').addEventListener('click', function () { show('s-start'); });
+
+  document.getElementById('b-draw-done').addEventListener('click', function () {
+    var fish = Draw.fish; if (!fish) return;
+    result = {
+      kind: fish.name, titles: fish.titles, title: fish.title,
+      boost: {
+        texCanvas: Draw.canvas, pvCanvas: Draw.canvas,
+        auto: 0, value: 0,
+        set: function () {},
+        bake: function () { return { texture: Draw.canvas.toDataURL('image/jpeg', 0.93) }; }
+      }
+    };
+    document.getElementById('p-name').textContent =
+      I18N.t('cap.itis', { name: (fish.titles && (fish.titles[I18N.lang] || fish.titles.ru)) || fish.title });
+    document.getElementById('boost').value = 0;
+    show('s-preview');
+    show3D(fish.name);
+  });
+
+  document.getElementById('b-draw').addEventListener('click', function () {
+    if (!manifest) return;
+    initDrawScreen();
+  });
 })();
 </script>
 </body>
