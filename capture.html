@@ -112,11 +112,14 @@
 
   /* ── рисование ─────────────────────────────────────────────────────────── */
   .draw-wrap {
-    width: 100%; max-width: 280px; margin: 10px auto 0;
+    width: 100%; max-width: 300px; margin: 6px auto 0;
     border-radius: 12px; overflow: hidden;
     border: 1px solid rgba(140, 200, 255, 0.25);
+    background: #0a2233;
   }
   #draw-canvas { display: block; width: 100%; height: auto; touch-action: none; cursor: crosshair; }
+  .drawhint { margin-bottom: 4px; }
+  .drawbtns { display: flex; gap: 8px; justify-content: center; margin: 10px 2px 0; }
   .palette {
     display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
     margin: 12px 0 0; padding: 0 4px;
@@ -178,11 +181,15 @@
 <!-- рисование -->
 <div class="screen" id="s-draw">
   <p class="fishname" id="draw-name"></p>
+  <p class="sub drawhint" data-t="cap.draw.hint"></p>
   <div class="draw-wrap"><canvas id="draw-canvas"></canvas></div>
   <div class="palette" id="palette"></div>
   <div class="drawrow">
     <label for="brush-size" data-t="cap.draw.size"></label>
-    <input type="range" id="brush-size" min="4" max="48" value="14">
+    <input type="range" id="brush-size" min="4" max="64" value="18">
+  </div>
+  <div class="drawbtns">
+    <button class="icon-btn" id="fill-btn" data-t="cap.draw.fill"></button>
     <button class="icon-btn" id="erase-btn" data-t="cap.draw.erase"></button>
     <button class="icon-btn" id="clear-btn" data-t="cap.draw.clear"></button>
   </div>
@@ -201,7 +208,7 @@
   <p class="fishname" id="p-name"></p>
   <div class="stage3d" id="stage3d"><div class="spin3d" id="spin3d" data-t="cap.reviving"></div></div>
   <img class="preview" id="p-img" data-t-alt="cap.photo" hidden>
-  <div class="boostrow">
+  <div class="boostrow" id="boostrow">
     <label for="boost" data-t="cap.boost"></label>
     <input type="range" id="boost" min="0" max="100" value="0">
   </div>
@@ -309,7 +316,7 @@
   var result = null;
 
   // ── 3D-предпросмотр: рыбка с раскраской ребёнка виляет хвостом ───────────
-  var P3 = { ready: false, renderer: null, scene: null, camera: null, mesh: null, geos: {}, raf: 0 };
+  var P3 = { ready: false, renderer: null, scene: null, camera: null, mesh: null, geos: {}, raf: 0, stageW: -1, stageH: -1 };
 
   function init3D() {
     if (P3.ready) return true;
@@ -332,34 +339,37 @@
     return true;
   }
 
-  // Геометрия вида с планарной UV бокового силуэта — та же рамка,
-  // по которой capture.js кадрирует текстуру. Кэш по виду.
-  function fishGeo(kind, cb) {
-    if (P3.geos[kind]) return cb(P3.geos[kind]);
+  // ── модель вида: один загрузчик на экран рисования и на 3D-превью ────────
+  // spec.view — 'front' (робот: лист и рисунок с лица, оси модели +Y вверх,
+  // +Z к зрителю) или 'side' (рыба: боковой силуэт). Берётся из манифеста.
+  var models = {};   // kind → spec | 'loading' | null (не загрузилась)
+  function withModel(kind, cb) {
+    var m = models[kind];
+    if (m === null) return cb(null);
+    if (m === 'loading') { setTimeout(function () { withModel(kind, cb); }, 120); return; }
+    if (m) return cb(m);
     var fish = null;
     manifest.fish.forEach(function (f) { if (f.name === kind) fish = f; });
-    if (!fish) return cb(null);
-    var spec = { url: fish.model, length: 2.4 };
+    if (!fish || !window.FishGLB) return cb(null);
+    models[kind] = 'loading';
+    var spec = { url: fish.model, length: 2.4, view: fish.view || 'side' };
     FishGLB.load([spec], function () {
-      if (!spec.gltf) return cb(null);
-      var geo = FishGLB.bake(spec);
-      geo.computeBoundingBox();
+      models[kind] = spec.gltf ? spec : null;
+      cb(models[kind]);
+    });
+  }
+
+  // Геометрия вида с планарной UV — той же плоскостью, в которой ребёнок
+  // раскрашивал: с лица у робота, сбоку у рыбы (см. FishGLB.bake). Кэш по виду.
+  function fishGeo(kind, cb) {
+    if (P3.geos[kind]) return cb(P3.geos[kind]);
+    withModel(kind, function (spec) {
+      if (!spec) return cb(null);
+      var geo = FishGLB.bake(spec, { uv: spec.view === 'front' ? 'front' : 'side' });
       var bb = geo.boundingBox;
-      var sz = Math.max(bb.max.z - bb.min.z, 1e-6), sy = Math.max(bb.max.y - bb.min.y, 1e-6);
-      var sx = Math.max(bb.max.x - bb.min.x, 1e-6);
-      var p = geo.attributes.position;
-      var uv = new Float32Array(p.count * 2);
-      // normalizeFish: body_orig→Z_norm, up_orig→Y_norm, lat_orig→X_norm.
-      // The coloring sheet uses: Z_orig (lat, depth) as horizontal and Y_orig (body) as vertical.
-      // For robots (body=Y_orig): Y_orig→Z_norm (V=height), Z_orig (lat)→X_norm (U=depth/lateral).
-      // For fish (body=Z_orig): Z_orig→Z_norm (U=length), Y_orig→Y_norm (V=height).
-      var bodyIsOrigY = spec.info.bodyMask.y > 0.5;
-      for (var i = 0; i < p.count; i++) {
-        uv[i * 2]     = bodyIsOrigY ? (p.getX(i) - bb.min.x) / sx : (p.getZ(i) - bb.min.z) / sz;
-        uv[i * 2 + 1] = bodyIsOrigY ? (p.getZ(i) - bb.min.z) / sz : (p.getY(i) - bb.min.y) / sy;
-      }
-      geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
       geo.userData.range = [bb.min.z, bb.max.z];
+      geo.userData.view = spec.view;
+      geo.userData.quat = spec.info.quat;
       P3.geos[kind] = geo;
       cb(geo);
     });
@@ -369,23 +379,19 @@
     var flat = document.getElementById('p-img');
     var spin = document.getElementById('spin3d');
     spin.style.display = '';
-    if (!init3D()) {
+    function fallback() {
       document.getElementById('stage3d').style.display = 'none';
       flat.hidden = false;
-      flat.src = result.preview;
-      return;
+      flat.src = result.preview || result.boost.pvCanvas.toDataURL('image/png');
     }
+    if (!init3D()) return fallback();
     fishGeo(kind, function (geo) {
-      if (!geo) {
-        document.getElementById('stage3d').style.display = 'none';
-        flat.hidden = false;
-        flat.src = result.preview;
-        return;
-      }
+      if (!geo) return fallback();
       if (P3.mesh) {
         P3.scene.remove(P3.mesh);
-        if (P3.mesh.material.map) P3.mesh.material.map.dispose();
-        P3.mesh.material.dispose();
+        var oldMesh = P3.mesh.children[0];
+        if (oldMesh.material.map) oldMesh.material.map.dispose();
+        oldMesh.material.dispose();
       }
       // Текстура прямо из канваса, а не через dataURL: ползунок «Ярче цвета»
       // перерисовывает канвас, и рыбке хватает needsUpdate — без PNG.
@@ -394,14 +400,24 @@
       var mat = new THREE.MeshStandardMaterial({
         map: tex, roughness: 0.5, metalness: 0.05, side: THREE.DoubleSide
       });
-      FishGLB.addBend(mat, {
-        bodyMask: new THREE.Vector3(0, 0, 1),
-        latMask: new THREE.Vector3(1, 0, 0),
-        range: geo.userData.range,
-        headAtMax: true
-      }, 0.4, Math.random() * 6.28);
-      P3.mesh = new THREE.Mesh(geo, mat);
-      P3.scene.add(P3.mesh);
+      var mesh = new THREE.Mesh(geo, mat);
+      var holder = new THREE.Group();
+      holder.add(mesh);
+      if (geo.userData.view === 'front') {
+        // Робот стоит и смотрит в камеру, как на листе: так сразу видно,
+        // что лицо легло куда надо. Возвращаем модели её собственные оси.
+        mesh.quaternion.copy(geo.userData.quat).invert();
+        holder.userData.front = true;
+      } else {
+        FishGLB.addBend(mat, {
+          bodyMask: new THREE.Vector3(0, 0, 1),
+          latMask: new THREE.Vector3(1, 0, 0),
+          range: geo.userData.range,
+          headAtMax: true
+        }, 0.4, Math.random() * 6.28);
+      }
+      P3.mesh = holder;
+      P3.scene.add(holder);
       spin.style.display = 'none';
       startLoop();
     });
@@ -415,8 +431,9 @@
       var box = document.getElementById('stage3d');
       if (!box.offsetParent) return;   // экран превью скрыт
       var w = box.clientWidth, h = box.clientHeight;
-      var el = P3.renderer.domElement;
-      if (el.clientWidth !== w || el.clientHeight !== h) {
+      if (P3.stageW !== w || P3.stageH !== h) {
+        P3.stageW = w; P3.stageH = h;
+        P3.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
         P3.renderer.setSize(w, h, false);
         P3.camera.aspect = w / h;
         P3.camera.updateProjectionMatrix();
@@ -424,9 +441,15 @@
       var t = (now - t0) / 1000;
       FishGLB.uTime.value = t;
       if (P3.mesh) {
-        // боком к зрителю, с лёгким поворотом туда-сюда
-        P3.mesh.rotation.y = Math.PI / 2 + Math.sin(t * 0.5) * 0.55;
-        P3.mesh.position.y = Math.sin(t * 0.9) * 0.07;
+        if (P3.mesh.userData.front) {
+          // лицом к зрителю, с лёгким поворотом туда-сюда
+          P3.mesh.rotation.y = Math.sin(t * 0.5) * 0.7;
+          P3.mesh.position.y = Math.sin(t * 0.9) * 0.05;
+        } else {
+          // боком к зрителю, с лёгким поворотом туда-сюда
+          P3.mesh.rotation.y = Math.PI / 2 + Math.sin(t * 0.5) * 0.55;
+          P3.mesh.position.y = Math.sin(t * 0.9) * 0.07;
+        }
       }
       P3.renderer.render(P3.scene, P3.camera);
     }
@@ -468,6 +491,7 @@
         I18N.t('cap.itis', { name: (r.titles && (r.titles[I18N.lang] || r.titles.ru)) || r.title });
       // ползунок стартует с авто-положения: бледный рисунок уже подкручен
       document.getElementById('boost').value = Math.round(r.boost.auto * 100);
+      document.getElementById('boostrow').hidden = false;
       show('s-preview');
       show3D(r.kind);
       return r;
@@ -542,63 +566,152 @@
   document.getElementById('b-release').addEventListener('click', function () { window.releaseFish(); });
 
   // ── рисование ───────────────────────────────────────────────────────────────
+  // Холст — робот с лица, каким он есть в аквариуме (заводская текстура без
+  // света). Ребёнок красит поверх: слой мазков лежит над подложкой и режется
+  // по её силуэту. Ластик стирает мазки — под ними снова робот, «Как было»
+  // убирает всё. В текстуру уходит подложка + мазки той же плоскостью,
+  // которой FishGLB.bake({uv:'front'}) кладёт её на модель.
   var DRAW_COLORS = ['#e53e3e','#dd6b20','#d69e2e','#38a169','#3182ce',
                      '#805ad5','#d53f8c','#2d3748','#aaaaaa','#ffffff'];
+  var DRAW_W = 512;   // px текстуры по горизонтали; высота — по габариту
   var Draw = {
     canvas: document.getElementById('draw-canvas'),
-    ctx: null, fish: null, clipPts: null,
-    color: '#e53e3e', size: 14, erasing: false,
+    ctx: null, fish: null,
+    base: null, strokes: null, sctx: null,
+    color: '#e53e3e', size: 18, erasing: false,
     lastX: 0, lastY: 0, down: false
   };
   if (Draw.canvas) Draw.ctx = Draw.canvas.getContext('2d');
 
-  function drawBuildPath() {
-    if (!Draw.clipPts) return;
-    var ctx = Draw.ctx, pts = Draw.clipPts;
-    ctx.beginPath();
-    pts.forEach(function (pt, i) { if (i === 0) ctx.moveTo(pt[0], pt[1]); else ctx.lineTo(pt[0], pt[1]); });
-    ctx.closePath();
+  function makeCanvas(w, h) {
+    var c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    return c;
   }
 
-  function drawOutline() {
-    drawBuildPath(); Draw.ctx.strokeStyle = '#333'; Draw.ctx.lineWidth = 2; Draw.ctx.stroke();
+  // Подложка из модели: ортографический рендер с +Z без света, фон прозрачный —
+  // прозрачность и есть силуэт. Без WebGL — белый силуэт по контуру с листа.
+  function drawBase(fish, spec) {
+    var bz = fish.bboxModel.z, by = fish.bboxModel.y;
+    var W = DRAW_W, H = Math.round(W * (by[1] - by[0]) / (bz[1] - bz[0]));
+    var base = makeCanvas(W, H);
+    var bctx = base.getContext('2d');
+
+    if (spec && init3D()) {
+      var root = spec.gltf.scene;
+      root.updateWorldMatrix(true, true);
+      var box = new THREE.Box3().setFromObject(root);
+      var swapped = [];
+      root.traverse(function (o) {
+        if (!o.isMesh) return;
+        var m = Array.isArray(o.material) ? o.material[0] : o.material;
+        swapped.push({ mesh: o, material: o.material });
+        o.material = new THREE.MeshBasicMaterial({ map: m.map || null, color: m.color || 0xffffff });
+      });
+      var scene = new THREE.Scene();
+      scene.add(root);
+      var cam = new THREE.OrthographicCamera(box.min.x, box.max.x, box.max.y, box.min.y, 0.01, 100);
+      cam.position.set(0, 0, box.max.z + 1);
+      cam.lookAt(0, 0, 0);
+      var r = P3.renderer;
+      r.setPixelRatio(1);
+      r.setSize(W, H, false);
+      r.setClearColor(0x000000, 0);
+      r.render(scene, cam);
+      bctx.drawImage(r.domElement, 0, 0);
+      P3.stageW = -1;   // цикл превью вернёт свой размер
+      scene.remove(root);
+      swapped.forEach(function (sw) { sw.mesh.material.dispose(); sw.mesh.material = sw.material; });
+    } else {
+      bctx.beginPath();
+      fish.contourModel.forEach(function (pt, i) {
+        var x = (pt[0] - bz[0]) / (bz[1] - bz[0]) * W;
+        var y = (by[1] - pt[1]) / (by[1] - by[0]) * H;
+        if (i === 0) bctx.moveTo(x, y); else bctx.lineTo(x, y);
+      });
+      bctx.closePath();
+      bctx.fillStyle = '#ffffff';
+      bctx.fill();
+    }
+    return base;
   }
 
-  function drawClear() {
-    if (!Draw.canvas || !Draw.clipPts) return;
+  // Что видит ребёнок: подложка, поверх — мазки в пределах силуэта, под всем — тёмный фон.
+  function drawCompose() {
     var ctx = Draw.ctx, c = Draw.canvas;
+    ctx.globalCompositeOperation = 'source-over';
     ctx.clearRect(0, 0, c.width, c.height);
-    ctx.save(); drawBuildPath(); ctx.clip();
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, c.width, c.height);
-    ctx.restore(); drawOutline();
+    ctx.drawImage(Draw.base, 0, 0);
+    ctx.globalCompositeOperation = 'source-atop';
+    ctx.drawImage(Draw.strokes, 0, 0);
+    ctx.globalCompositeOperation = 'destination-over';
+    ctx.fillStyle = '#0a2233';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // Текстура: то же без фона. Край силуэта растягиваем наружу — планарная
+  // UV у самой кромки подсасывает соседние тексели, и без этого по контуру
+  // робота шла бы тёмная кайма.
+  function drawTexture() {
+    var W = Draw.base.width, H = Draw.base.height;
+    var inner = makeCanvas(W, H), ictx = inner.getContext('2d');
+    ictx.drawImage(Draw.base, 0, 0);
+    ictx.globalCompositeOperation = 'source-atop';
+    ictx.drawImage(Draw.strokes, 0, 0);
+
+    var out = makeCanvas(W, H), octx = out.getContext('2d');
+    octx.drawImage(inner, 0, 0);
+    octx.globalCompositeOperation = 'destination-over';
+    [2, 4, 7, 11, 16].forEach(function (rad) {
+      for (var a = 0; a < 8; a++) {
+        octx.drawImage(inner, Math.round(Math.cos(a * Math.PI / 4) * rad), Math.round(Math.sin(a * Math.PI / 4) * rad));
+      }
+    });
+    octx.fillStyle = '#c9c9c9';
+    octx.fillRect(0, 0, W, H);
+    octx.globalCompositeOperation = 'source-over';
+    return out;
   }
 
   function drawStroke(x1, y1, x2, y2) {
-    if (!Draw.canvas || !Draw.clipPts) return;
-    var ctx = Draw.ctx;
-    var col = Draw.erasing ? '#ffffff' : Draw.color;
-    ctx.save(); drawBuildPath(); ctx.clip();
+    if (!Draw.strokes) return;
+    var ctx = Draw.sctx;
+    ctx.globalCompositeOperation = Draw.erasing ? 'destination-out' : 'source-over';
+    ctx.strokeStyle = ctx.fillStyle = Draw.color;
     if (x1 === x2 && y1 === y2) {
-      ctx.beginPath(); ctx.arc(x1, y1, Draw.size / 2, 0, Math.PI * 2);
-      ctx.fillStyle = col; ctx.fill();
+      ctx.beginPath(); ctx.arc(x1, y1, Draw.size / 2, 0, Math.PI * 2); ctx.fill();
     } else {
       ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
-      ctx.strokeStyle = col; ctx.lineWidth = Draw.size;
-      ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+      ctx.lineWidth = Draw.size; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
     }
-    ctx.restore(); drawOutline();
+    drawCompose();
+  }
+
+  function drawFill() {
+    if (!Draw.strokes) return;
+    Draw.sctx.globalCompositeOperation = 'source-over';
+    Draw.sctx.fillStyle = Draw.color;
+    Draw.sctx.fillRect(0, 0, Draw.strokes.width, Draw.strokes.height);
+    drawCompose();
+  }
+
+  function drawReset() {
+    if (!Draw.strokes) return;
+    Draw.sctx.clearRect(0, 0, Draw.strokes.width, Draw.strokes.height);
+    drawCompose();
   }
 
   function drawPos(e) {
     var rect = Draw.canvas.getBoundingClientRect();
     var scX = Draw.canvas.width / rect.width, scY = Draw.canvas.height / rect.height;
-    var src = (e.touches && e.touches[0]) || e;
-    return [(src.clientX - rect.left) * scX, (src.clientY - rect.top) * scY];
+    return [(e.clientX - rect.left) * scX, (e.clientY - rect.top) * scY];
   }
 
   if (Draw.canvas) {
     Draw.canvas.addEventListener('pointerdown', function (e) {
       e.preventDefault(); Draw.down = true;
+      if (Draw.canvas.setPointerCapture) { try { Draw.canvas.setPointerCapture(e.pointerId); } catch (err) { /* не критично */ } }
       var p = drawPos(e); Draw.lastX = p[0]; Draw.lastY = p[1];
       drawStroke(p[0], p[1], p[0], p[1]);
     });
@@ -607,9 +720,15 @@
       var p = drawPos(e); drawStroke(Draw.lastX, Draw.lastY, p[0], p[1]);
       Draw.lastX = p[0]; Draw.lastY = p[1];
     });
-    ['pointerup','pointercancel','pointerleave'].forEach(function (ev) {
+    ['pointerup', 'pointercancel'].forEach(function (ev) {
       Draw.canvas.addEventListener(ev, function () { Draw.down = false; });
     });
+  }
+
+  function setEraser(on) {
+    Draw.erasing = on;
+    document.getElementById('erase-btn').classList.toggle('active', on);
+    if (on) document.querySelectorAll('.swatch').forEach(function (sw) { sw.classList.remove('active'); });
   }
 
   function initDrawScreen() {
@@ -619,21 +738,6 @@
     document.getElementById('draw-name').textContent =
       I18N.t('cap.itis', { name: (fish.titles && (fish.titles[I18N.lang] || fish.titles.ru)) || fish.title });
 
-    var zRange = fish.bboxModel.z[1] - fish.bboxModel.z[0];
-    var yRange = fish.bboxModel.y[1] - fish.bboxModel.y[0];
-    var CW = 240, CH = Math.round(CW * yRange / zRange);
-    Draw.canvas.width = CW; Draw.canvas.height = CH;
-
-    Draw.clipPts = fish.contourModel.map(function (pt) {
-      return [
-        (pt[0] - fish.bboxModel.z[0]) / zRange * CW,
-        (fish.bboxModel.y[1] - pt[1]) / yRange * CH
-      ];
-    });
-
-    Draw.erasing = false;
-    document.getElementById('erase-btn').classList.remove('active');
-
     var pal = document.getElementById('palette');
     if (!pal.children.length) {
       DRAW_COLORS.forEach(function (c, idx) {
@@ -642,48 +746,58 @@
         btn.style.background = c;
         if (c === '#ffffff') btn.style.border = '2px solid #888';
         btn.addEventListener('click', function () {
-          document.querySelectorAll('.swatch').forEach(function (s) { s.classList.remove('active'); });
+          document.querySelectorAll('.swatch').forEach(function (sw) { sw.classList.remove('active'); });
           btn.classList.add('active');
-          Draw.color = c; Draw.erasing = false;
-          document.getElementById('erase-btn').classList.remove('active');
+          Draw.color = c;
+          setEraser(false);
         });
         pal.appendChild(btn);
       });
     } else {
-      document.querySelectorAll('.swatch')[0].classList.add('active');
+      document.querySelectorAll('.swatch').forEach(function (sw, i) { sw.classList.toggle('active', i === 0); });
       Draw.color = DRAW_COLORS[0];
     }
+    setEraser(false);
 
-    drawClear();
-    show('s-draw');
+    show('s-busy');
+    document.getElementById('busy-text').textContent = I18N.t('cap.reviving');
+    withModel(fish.name, function (spec) {
+      Draw.base = drawBase(fish, spec);
+      Draw.canvas.width = Draw.base.width; Draw.canvas.height = Draw.base.height;
+      Draw.strokes = makeCanvas(Draw.base.width, Draw.base.height);
+      Draw.sctx = Draw.strokes.getContext('2d');
+      drawCompose();
+      show('s-draw');
+      tellHeight();
+    });
   }
 
-  document.getElementById('erase-btn').addEventListener('click', function () {
-    Draw.erasing = !Draw.erasing;
-    this.classList.toggle('active', Draw.erasing);
-    if (Draw.erasing) document.querySelectorAll('.swatch').forEach(function (s) { s.classList.remove('active'); });
-  });
-  document.getElementById('clear-btn').addEventListener('click', drawClear);
+  document.getElementById('erase-btn').addEventListener('click', function () { setEraser(!Draw.erasing); });
+  document.getElementById('fill-btn').addEventListener('click', function () { setEraser(false); drawFill(); });
+  document.getElementById('clear-btn').addEventListener('click', drawReset);
   document.getElementById('brush-size').addEventListener('input', function () { Draw.size = +this.value; });
-  document.getElementById('b-draw-back').addEventListener('click', function () { show('s-start'); });
+  document.getElementById('b-draw-back').addEventListener('click', function () { show('s-start'); tellHeight(); });
 
-  document.getElementById('b-draw-done').addEventListener('click', function () {
-    var fish = Draw.fish; if (!fish) return;
+  window.finishDrawing = function () {   // отдельно — для автотестов
+    var fish = Draw.fish; if (!fish || !Draw.base) return;
+    var tex = drawTexture();
     result = {
       kind: fish.name, titles: fish.titles, title: fish.title,
       boost: {
-        texCanvas: Draw.canvas, pvCanvas: Draw.canvas,
+        texCanvas: tex, pvCanvas: tex,
         auto: 0, value: 0,
         set: function () {},
-        bake: function () { return { texture: Draw.canvas.toDataURL('image/jpeg', 0.93) }; }
+        bake: function () { return { texture: tex.toDataURL('image/png') }; }
       }
     };
     document.getElementById('p-name').textContent =
       I18N.t('cap.itis', { name: (fish.titles && (fish.titles[I18N.lang] || fish.titles.ru)) || fish.title });
-    document.getElementById('boost').value = 0;
+    document.getElementById('boostrow').hidden = true;   // нечего подкручивать: цвета уже сочные
     show('s-preview');
     show3D(fish.name);
-  });
+    return result;
+  };
+  document.getElementById('b-draw-done').addEventListener('click', window.finishDrawing);
 
   document.getElementById('b-draw').addEventListener('click', function () {
     if (!manifest) return;

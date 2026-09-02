@@ -221,11 +221,61 @@
     return { group: group, mixer: mixer, phase: phase, mats: allMats };
   }
 
+  // Планарная UV «с лица»: горизонталь — X модели, вертикаль — Y, зритель
+  // на +Z (стандартная ориентация glTF). Так робот с листа раскраски и с
+  // экрана рисования ложится на модель той же плоскостью, в которой его
+  // рисовали: лицо — на лицо, руки — на руки. Спина получает то же
+  // изображение зеркально, бока — растянутый край; для игрушки этого хватает.
+  //
+  // parts: [{geometry, matrix}], matrix переводит геометрию в пространство
+  // модели (matrixWorld меша при корне без поворота). UV пишется в geometry.
+  function frontUV(parts) {
+    var v = new THREE.Vector3();
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    parts.forEach(function (part) {
+      var p = part.geometry.attributes.position;
+      for (var i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i).applyMatrix4(part.matrix);
+        if (v.x < minX) minX = v.x;
+        if (v.x > maxX) maxX = v.x;
+        if (v.y < minY) minY = v.y;
+        if (v.y > maxY) maxY = v.y;
+      }
+    });
+    var spanX = Math.max(maxX - minX, 1e-6), spanY = Math.max(maxY - minY, 1e-6);
+    parts.forEach(function (part) {
+      var p = part.geometry.attributes.position;
+      var uv = new Float32Array(p.count * 2);
+      for (var i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i).applyMatrix4(part.matrix);
+        uv[i * 2] = (v.x - minX) / spanX;        // u: слева направо для зрителя
+        uv[i * 2 + 1] = (v.y - minY) / spanY;    // v: снизу вверх
+      }
+      part.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    });
+    return { minX: minX, maxX: maxX, minY: minY, maxY: maxY };
+  }
+
   // Одна геометрия из всей модели: нос → +Z, длина spec.length, центр в нуле,
   // цвета материалов запечены в вершины — для InstancedMesh одним draw call.
-  function bake(spec) {
+  //
+  // opts.uv: 'front' — планарная UV с лица (frontUV), считается ДО поворота
+  // модели, в её собственных осях; 'side' — планарная UV бокового силуэта в
+  // уже повёрнутых осях (u: хвост → нос по Z, v: брюхо → спина по Y) — та же
+  // рамка, по которой capture.js кадрирует текстуру с листа рыбы.
+  function bake(spec, opts) {
     var root = spec.gltf.scene;
     root.updateWorldMatrix(true, true);
+    var uvMode = (opts && opts.uv) || null;
+    // Работаем на копиях геометрий: планарная UV не должна утечь в общую
+    // модель — по её родной развёртке ещё рисуется заводская текстура.
+    var entries = [];
+    root.traverse(function (o) {
+      if (o.isMesh) entries.push({ mesh: o, geometry: o.geometry.clone() });
+    });
+    if (uvMode === 'front') {
+      frontUV(entries.map(function (e) { return { geometry: e.geometry, matrix: e.mesh.matrixWorld }; }));
+    }
     var skel = typeof spec.headAtMax === 'boolean' ? null : skelOf(spec.gltf);
     var w = fishFrame(root, true, skel && skel.axes);
     if (typeof spec.headAtMax === 'boolean') w.headAtMax = spec.headAtMax;
@@ -236,9 +286,8 @@
       .multiply(new THREE.Matrix4().makeTranslation(-w.center.x, -w.center.y, -w.center.z));
 
     var parts = [];
-    root.traverse(function (o) {
-      if (!o.isMesh) return;
-      var g = o.geometry.clone();
+    entries.forEach(function (e) {
+      var o = e.mesh, g = e.geometry;
       g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(M, o.matrixWorld));
       if (g.index) g = g.toNonIndexed();
 
@@ -259,6 +308,7 @@
       out.setAttribute('position', g.attributes.position);
       out.setAttribute('normal', g.attributes.normal);
       out.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      if (uvMode === 'front' && g.attributes.uv) out.setAttribute('uv', g.attributes.uv);
       parts.push(out);
     });
 
@@ -278,9 +328,26 @@
     geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     geo.computeBoundingBox();
+    if (uvMode === 'front') {
+      var uvAll = new Float32Array(total * 2), uvOff = 0;
+      for (i = 0; i < parts.length; i++) {
+        uvAll.set(parts[i].attributes.uv.array, uvOff * 2);
+        uvOff += parts[i].attributes.position.count;
+      }
+      geo.setAttribute('uv', new THREE.BufferAttribute(uvAll, 2));
+    } else if (uvMode === 'side') {
+      var bb = geo.boundingBox;
+      var sz = Math.max(bb.max.z - bb.min.z, 1e-6), sy = Math.max(bb.max.y - bb.min.y, 1e-6);
+      var uvSide = new Float32Array(total * 2);
+      for (i = 0; i < total; i++) {
+        uvSide[i * 2] = (pos[i * 3 + 2] - bb.min.z) / sz;
+        uvSide[i * 2 + 1] = (pos[i * 3 + 1] - bb.min.y) / sy;
+      }
+      geo.setAttribute('uv', new THREE.BufferAttribute(uvSide, 2));
+    }
     geo.computeBoundingSphere();
     return geo;
   }
 
-  window.FishGLB = { uTime: uTime, load: load, spawn: spawn, bake: bake, addBend: addBend };
+  window.FishGLB = { uTime: uTime, load: load, spawn: spawn, bake: bake, addBend: addBend, frontUV: frontUV };
 })();

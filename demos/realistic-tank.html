@@ -332,6 +332,8 @@
 <script src="/vendor/qr.js"></script>
 <script src="/assets/fish-frame.js"></script>
 <script src="/assets/fish-thumbs.js"></script>
+<!-- FishGLB.frontUV: планарная UV «с лица» для роботов (view: front в манифесте) -->
+<script src="/assets/fish-glb.js"></script>
 <script src="/assets/modal.js"></script>
 <script src="/assets/tank.js"></script>
 <script>
@@ -1043,6 +1045,24 @@
 
   function buildPaintedTemplate(kind, base) {
     var clone = THREE.SkeletonUtils.clone(base.gltf.scene);
+    var spec0 = paintedSpec[paintedModel(kind)];
+
+    // Робот (view: 'front'): раскраска и рисунок — с лица, в собственных осях
+    // модели (+Y вверх, +Z к зрителю). UV кладём до поворота в pivot, иначе
+    // лицо уехало бы на бок, как у рыбы.
+    if (spec0 && spec0.view === 'front') {
+      clone.updateMatrixWorld(true);
+      var frontParts = [];
+      clone.traverse(function (o) {
+        if (!o.isMesh) return;
+        o.geometry = o.geometry.clone();
+        frontParts.push({ geometry: o.geometry, matrix: o.matrixWorld });
+      });
+      FishGLB.frontUV(frontParts);
+      paintedTemplates[kind] = { scene: clone, base: base };
+      return paintedTemplates[kind];
+    }
+
     var pivot = new THREE.Group();
     pivot.quaternion.copy(base.info.quat);
     pivot.scale.setScalar(base.info.scale);
@@ -1265,7 +1285,7 @@
     fetch('/assets/coloring/manifest.json')
       .then(function (r) { return r.json(); })
       .then(function (m) {
-        m.fish.forEach(function (f) { paintedSpec[f.name] = { length: f.length }; });
+        m.fish.forEach(function (f) { paintedSpec[f.name] = { length: f.length, view: f.view || 'side' }; });
       })
       .catch(function () { console.error('не загрузился манифест раскрасок'); })
       .then(function () {

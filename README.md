@@ -42,7 +42,12 @@ the child taking the hint for part of the drawing.
 thresholds, undoes the perspective, cuts the drawing along the species contour
 from the manifest and trims a strip along the printed line itself — otherwise
 it would stay as a dark rim on the fish. The result is a texture, mapped onto
-the 3D model through a planar unwrap of its side silhouette.
+the 3D model through a planar unwrap in the same plane the child coloured it
+in: a fish from the side (`view: side`), the robot from the front (`view:
+front`, glTF axes: +Y up, +Z towards the viewer) — otherwise a drawn face would
+land on the back of the head. Instead of a photo the robot can be coloured
+right on the phone: the drawing screen shows its front with the factory
+texture, and the strokes go on top.
 
 **The aquarium.** `demos/realistic-tank.html`: the fish swim inside a volume
 that follows the camera frustum rather than a box — against a box, fish near
@@ -249,6 +254,7 @@ conversion pitfalls are in
 | What | Where | Why |
 |---|---|---|
 | Silhouettes | `/tools/silhouettes.html` | traces the pack models, produces `contours.json` and the fins drawn over the body |
+| Robot silhouette | `node tools/robot-front-contour.js` | traces the robot from the front and rewrites the contour in the manifest and the SVG sheets; run make-pdf afterwards |
 | Sheets | `node tools/make-coloring.js` | builds 12 A4 sheets in three languages plus the manifest |
 | PDF | `node tools/make-pdf.js` | prints the sheets into `raskraski.<lang>.pdf` via headless Chrome; run after make-coloring |
 | Capture test | `/tools/test-capture.html` | runs every sheet through skew, rotation and noise |
