@@ -346,14 +346,16 @@
       geo.computeBoundingBox();
       var bb = geo.boundingBox;
       var sz = Math.max(bb.max.z - bb.min.z, 1e-6), sy = Math.max(bb.max.y - bb.min.y, 1e-6);
+      var sx = Math.max(bb.max.x - bb.min.x, 1e-6);
       var p = geo.attributes.position;
       var uv = new Float32Array(p.count * 2);
-      // normalizeFish remaps the longest axis to Z_norm. For fish (body=Z_orig) the current
-      // U=Z_norm/V=Y_norm mapping is correct. For robots (body=Y_orig→Z_norm, depth=Z_orig→Y_norm)
-      // Z_norm is HEIGHT (should be V) and Y_norm is the lateral/depth (should be U), so swap.
+      // normalizeFish: body_orig→Z_norm, up_orig→Y_norm, lat_orig→X_norm.
+      // The coloring sheet uses: Z_orig (lat, depth) as horizontal and Y_orig (body) as vertical.
+      // For robots (body=Y_orig): Y_orig→Z_norm (V=height), Z_orig (lat)→X_norm (U=depth/lateral).
+      // For fish (body=Z_orig): Z_orig→Z_norm (U=length), Y_orig→Y_norm (V=height).
       var bodyIsOrigY = spec.info.bodyMask.y > 0.5;
       for (var i = 0; i < p.count; i++) {
-        uv[i * 2]     = bodyIsOrigY ? (p.getY(i) - bb.min.y) / sy : (p.getZ(i) - bb.min.z) / sz;
+        uv[i * 2]     = bodyIsOrigY ? (p.getX(i) - bb.min.x) / sx : (p.getZ(i) - bb.min.z) / sz;
         uv[i * 2 + 1] = bodyIsOrigY ? (p.getZ(i) - bb.min.z) / sz : (p.getY(i) - bb.min.y) / sy;
       }
       geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
