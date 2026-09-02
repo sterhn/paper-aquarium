@@ -43,7 +43,7 @@
     "en": "Clown Bot",
     "pl": "Robot-błazen"
    },
-   "model": "/assets/models/pack/spherebot/spherebot.glb",
+   "model": "/assets/models/pack/robot/textured_mesh.glb",
    "svg": "assets/coloring/clownfish.svg",
    "sheets": {
     "ru": "assets/coloring/clownfish.svg",
@@ -536,7 +536,7 @@
     "en": "Blue Bot",
     "pl": "Niebieski robot"
    },
-   "model": "/assets/models/pack/spherebot/spherebot.glb",
+   "model": "/assets/models/pack/robot/textured_mesh.glb",
    "svg": "assets/coloring/bluetang.svg",
    "sheets": {
     "ru": "assets/coloring/bluetang.svg",
@@ -925,7 +925,7 @@
     "en": "Sniper Bot",
     "pl": "Robot-strzelec"
    },
-   "model": "/assets/models/pack/spherebot/spherebot.glb",
+   "model": "/assets/models/pack/robot/textured_mesh.glb",
    "svg": "assets/coloring/chelmonrostratus.svg",
    "sheets": {
     "ru": "assets/coloring/chelmonrostratus.svg",
@@ -1478,7 +1478,7 @@
     "en": "Trigger Bot",
     "pl": "Robot-spust"
    },
-   "model": "/assets/models/pack/spherebot/spherebot.glb",
+   "model": "/assets/models/pack/robot/textured_mesh.glb",
    "svg": "assets/coloring/clowntriggerfish.svg",
    "sheets": {
     "ru": "assets/coloring/clowntriggerfish.svg",
@@ -1891,7 +1891,7 @@
     "en": "Angel Bot",
     "pl": "Robot-anioł"
    },
-   "model": "/assets/models/pack/spherebot/spherebot.glb",
+   "model": "/assets/models/pack/robot/textured_mesh.glb",
    "svg": "assets/coloring/frenchangelfish.svg",
    "sheets": {
     "ru": "assets/coloring/frenchangelfish.svg",
@@ -2436,7 +2436,7 @@
     "en": "Scout Bot",
     "pl": "Robot-zwiadowca"
    },
-   "model": "/assets/models/pack/spherebot/spherebot.glb",
+   "model": "/assets/models/pack/robot/textured_mesh.glb",
    "svg": "assets/coloring/fusilierfish.svg",
    "sheets": {
     "ru": "assets/coloring/fusilierfish.svg",
@@ -2817,7 +2817,7 @@
     "en": "Guardian Bot",
     "pl": "Robot-strażnik"
    },
-   "model": "/assets/models/pack/spherebot/spherebot.glb",
+   "model": "/assets/models/pack/robot/textured_mesh.glb",
    "svg": "assets/coloring/blackspottedsweetlips.svg",
    "sheets": {
     "ru": "assets/coloring/blackspottedsweetlips.svg",
@@ -3218,7 +3218,7 @@
     "en": "Hunter Bot",
     "pl": "Robot-łowca"
    },
-   "model": "/assets/models/pack/spherebot/spherebot.glb",
+   "model": "/assets/models/pack/robot/textured_mesh.glb",
    "svg": "assets/coloring/coralgrouper.svg",
    "sheets": {
     "ru": "assets/coloring/coralgrouper.svg",
@@ -3619,7 +3619,7 @@
     "en": "Tracker Bot",
     "pl": "Robot-tropiciel"
    },
-   "model": "/assets/models/pack/spherebot/spherebot.glb",
+   "model": "/assets/models/pack/robot/textured_mesh.glb",
    "svg": "assets/coloring/browntang.svg",
    "sheets": {
     "ru": "assets/coloring/browntang.svg",
@@ -4052,7 +4052,7 @@
     "en": "Defender Bot",
     "pl": "Robot-obrońca"
    },
-   "model": "/assets/models/pack/spherebot/spherebot.glb",
+   "model": "/assets/models/pack/robot/textured_mesh.glb",
    "svg": "assets/coloring/bicolorangelfish.svg",
    "sheets": {
     "ru": "assets/coloring/bicolorangelfish.svg",
@@ -4481,7 +4481,7 @@
     "en": "Butterfly Bot",
     "pl": "Robot-motyl"
    },
-   "model": "/assets/models/pack/spherebot/spherebot.glb",
+   "model": "/assets/models/pack/robot/textured_mesh.glb",
    "svg": "assets/coloring/bluecheekbutterflyfish.svg",
    "sheets": {
     "ru": "assets/coloring/bluecheekbutterflyfish.svg",
@@ -4934,7 +4934,7 @@
     "en": "Disc Bot",
     "pl": "Robot-dysk"
    },
-   "model": "/assets/models/pack/spherebot/spherebot.glb",
+   "model": "/assets/models/pack/robot/textured_mesh.glb",
    "svg": "assets/coloring/discus1.svg",
    "sheets": {
     "ru": "assets/coloring/discus1.svg",

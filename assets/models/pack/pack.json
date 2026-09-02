@@ -7,7 +7,7 @@
    "en": "Clown Bot",
    "pl": "Robot-błazen"
   },
-  "url": "/assets/models/pack/spherebot/spherebot.glb"
+  "url": "/assets/models/pack/robot/textured_mesh.glb"
  },
  {
   "name": "bluetang",
@@ -17,7 +17,7 @@
    "en": "Blue Bot",
    "pl": "Niebieski robot"
   },
-  "url": "/assets/models/pack/spherebot/spherebot.glb"
+  "url": "/assets/models/pack/robot/textured_mesh.glb"
  },
  {
   "name": "chelmonrostratus",
@@ -27,7 +27,7 @@
    "en": "Sniper Bot",
    "pl": "Robot-strzelec"
   },
-  "url": "/assets/models/pack/spherebot/spherebot.glb"
+  "url": "/assets/models/pack/robot/textured_mesh.glb"
  },
  {
   "name": "clowntriggerfish",
@@ -37,7 +37,7 @@
    "en": "Trigger Bot",
    "pl": "Robot-spust"
   },
-  "url": "/assets/models/pack/spherebot/spherebot.glb"
+  "url": "/assets/models/pack/robot/textured_mesh.glb"
  },
  {
   "name": "frenchangelfish",
@@ -47,7 +47,7 @@
    "en": "Angel Bot",
    "pl": "Robot-anioł"
   },
-  "url": "/assets/models/pack/spherebot/spherebot.glb"
+  "url": "/assets/models/pack/robot/textured_mesh.glb"
  },
  {
   "name": "fusilierfish",
@@ -57,7 +57,7 @@
    "en": "Scout Bot",
    "pl": "Robot-zwiadowca"
   },
-  "url": "/assets/models/pack/spherebot/spherebot.glb"
+  "url": "/assets/models/pack/robot/textured_mesh.glb"
  },
  {
   "name": "blackspottedsweetlips",
@@ -67,7 +67,7 @@
    "en": "Guardian Bot",
    "pl": "Robot-strażnik"
   },
-  "url": "/assets/models/pack/spherebot/spherebot.glb"
+  "url": "/assets/models/pack/robot/textured_mesh.glb"
  },
  {
   "name": "coralgrouper",
@@ -77,7 +77,7 @@
    "en": "Hunter Bot",
    "pl": "Robot-łowca"
   },
-  "url": "/assets/models/pack/spherebot/spherebot.glb"
+  "url": "/assets/models/pack/robot/textured_mesh.glb"
  },
  {
   "name": "browntang",
@@ -87,7 +87,7 @@
    "en": "Tracker Bot",
    "pl": "Robot-tropiciel"
   },
-  "url": "/assets/models/pack/spherebot/spherebot.glb"
+  "url": "/assets/models/pack/robot/textured_mesh.glb"
  },
  {
   "name": "bicolorangelfish",
@@ -97,7 +97,7 @@
    "en": "Defender Bot",
    "pl": "Robot-obrońca"
   },
-  "url": "/assets/models/pack/spherebot/spherebot.glb"
+  "url": "/assets/models/pack/robot/textured_mesh.glb"
  },
  {
   "name": "bluecheekbutterflyfish",
@@ -107,7 +107,7 @@
    "en": "Butterfly Bot",
    "pl": "Robot-motyl"
   },
-  "url": "/assets/models/pack/spherebot/spherebot.glb"
+  "url": "/assets/models/pack/robot/textured_mesh.glb"
  },
  {
   "name": "discus1",
@@ -117,6 +117,6 @@
    "en": "Disc Bot",
    "pl": "Robot-dysk"
   },
-  "url": "/assets/models/pack/spherebot/spherebot.glb"
+  "url": "/assets/models/pack/robot/textured_mesh.glb"
  }
 ]
