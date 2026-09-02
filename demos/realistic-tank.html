@@ -156,7 +156,6 @@
   .menu .packitem .t { font-size: 11px; line-height: 1.25; color: var(--muted); text-align: center; }
   .menu .packitem[disabled] { opacity: 0.5; cursor: default; }
 
-  .menu .langrow { display: flex; justify-content: center; margin-top: 12px; }
   .menu .langpick { display: inline-flex; gap: 4px; }
   .menu .langpick button {
     appearance: none; cursor: pointer; font: inherit; font-size: 11.5px; letter-spacing: .5px;
@@ -260,7 +259,6 @@
         <span><b data-t="menu.home.title"></b><i data-t="menu.home.sub"></i></span>
       </a>
 
-      <div class="langrow"><span id="lang"></span></div>
     </div>
 
     <div id="menu-print" hidden>
@@ -574,13 +572,28 @@
 
   function maskVec(name) { return axisVec(name, 1); }
 
-  function normalizeFish(root, targetLen, skel) {
+  // upright — робот: модель уже стоит как надо (glTF: +Y вверх, +Z — лицо),
+  // и плывёт она стоя, лицом вперёд. Рыбий разбор осей положил бы её на бок
+  // и повёл макушкой вперёд. Рост задаёт targetLen.
+  function normalizeFish(root, targetLen, skel, upright) {
     root.updateWorldMatrix(true, true);
     var axes = skel && skel.axes;
     var w = fishFrame(root, true, axes);
     var local = fishFrame(root, false, axes);
     if (skel && typeof skel.headAtMax === 'boolean') {
       w.headAtMax = skel.headAtMax; local.headAtMax = skel.headAtMax;
+    }
+
+    if (upright) {
+      root.position.sub(w.center);
+      return {
+        quat: new THREE.Quaternion(),
+        scale: targetLen / (w.size.y || 1),
+        bodyMask: maskVec('z'),
+        latMask: maskVec('x'),
+        range: [local.box.min.z, local.box.max.z],
+        headAtMax: true
+      };
     }
 
     // Строим базис модели и обращаем его: нос → +Z, спина → +Y.
@@ -1016,12 +1029,13 @@
   // Рисунки, снятые с прежних четырёх моделей (те были Free3D Personal Use и
   // из игры убраны). Пересаживаем их на покупной вид с похожими пропорциями
   // тела: рисунок слегка растянется, но 18 детских рыбок не пропадут.
-  var LEGACY_KIND = {
-    chromis: 'fusilierfish',
-    angelfish: 'bluetang',
-    tropical: 'bluecheekbutterflyfish',
-    perch: 'clowntriggerfish'
-  };
+  // Потом рыб сменил робот, а виды ещё какое-то время носили рыбьи имена
+  // при одной и той же модели. Все они — тот же робот.
+  var LEGACY_KIND = {};
+  ['chromis', 'angelfish', 'tropical', 'perch',
+   'clownfish', 'bluetang', 'chelmonrostratus', 'clowntriggerfish', 'frenchangelfish',
+   'fusilierfish', 'blackspottedsweetlips', 'coralgrouper', 'browntang', 'bicolorangelfish',
+   'bluecheekbutterflyfish', 'discus1'].forEach(function (k) { LEGACY_KIND[k] = 'robot'; });
 
   var paintedSpec = {};   // вид → {length} из манифеста раскрасок
   var paintedSeen = {}, paintedCount = 0, paintedTemplates = {};
@@ -1172,6 +1186,7 @@
   }
 
   function withPackModel(name, cb) {
+    name = paintedModel(name);   // старые записи пака зовут робота рыбьим именем
     var cached = packModels[name];
     if (cached && cached !== 'loading') return cb(cached);
     if (cached === 'loading') { setTimeout(function () { withPackModel(name, cb); }, 300); return; }
@@ -1186,7 +1201,8 @@
           name: name, gltf: gltf, bend: 0,
           length: known && known.length ? known.length : PACK_LEN
         };
-        spec.info = normalizeFish(gltf.scene, spec.length, FishFrame.fromSkeleton(gltf));
+        spec.info = normalizeFish(gltf.scene, spec.length, FishFrame.fromSkeleton(gltf),
+          !!(known && known.view === 'front'));
         var b = FishFrame.bounds(gltf.scene);
         (gltf.animations || []).forEach(function (clip) {
           stripRootMotion(clip, Math.max(b.size.x, b.size.y, b.size.z));
@@ -1493,7 +1509,6 @@
   var menuUsed = false;      // открывали ли меню руками — тогда сами не лезем
   var fishCount = null;      // сколько рыбок в аквариуме, null — ещё не знаем
 
-  I18N.mount(document.getElementById('lang'));
 
   // Витрина: общий аквариум по ссылке «Посмотреть» с главной. Меню урезано,
   // чтобы гость не отправил рыбку ребёнка в чужой аквариум: остаются корм,
@@ -1734,13 +1749,11 @@
       .then(function () { btn.disabled = false; });
   }
 
-  // Названия видов берём из манифеста раскрасок: там они на трёх языках и
-  // там же единственный список — в pack.json лежат только русские подписи.
+  // Названия видов берём из манифеста раскрасок — там единственный список.
   var sheetTitles = {};
 
   function packTitle(item) {
-    var t = sheetTitles[item.name];
-    return (t && (t[I18N.lang] || t.ru)) || item.title || item.name;
+    return sheetTitles[item.name] || item.title || item.name;
   }
 
   function listPack() {
@@ -1749,7 +1762,7 @@
     fetch('/assets/coloring/manifest.json')
       .then(function (r) { return r.json(); })
       .then(function (m) {
-        (m.fish || []).forEach(function (f) { sheetTitles[f.name] = f.titles || { ru: f.title }; });
+        (m.fish || []).forEach(function (f) { sheetTitles[f.name] = f.title; });
       })
       .catch(function () { /* останутся русские подписи из пака */ })
       .then(fillPack);

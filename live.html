@@ -102,20 +102,6 @@
   .bggrid button img {
     display: block; width: 100%; height: 100%; object-fit: cover;
   }
-
-  .langrow {
-    margin: 10px 0 0; text-align: center;
-  }
-  .langrow button {
-    font: 12px/1 system-ui, sans-serif; padding: 4px 10px;
-    border: 1px solid transparent; border-radius: 8px;
-    background: transparent; color: var(--muted); cursor: pointer;
-    transition: color .15s, background .15s, border-color .15s;
-  }
-  .langrow button:hover { color: var(--ink); }
-  .langrow button.active {
-    color: var(--accent); border-color: var(--line); background: rgba(88, 214, 255, 0.1);
-  }
 </style>
 </head>
 <body>
@@ -142,8 +128,6 @@
         <span class="ico">&#x1F5BC;&#xFE0F;</span>
         <span><b id="t-bg-title"></b><i id="t-bg-sub"></i></span>
       </button>
-
-      <div class="langrow" id="langrow"></div>
     </div>
 
     <div id="menu-bgpick" hidden>
@@ -162,7 +146,6 @@
   'use strict';
 
   // ── i18n ──────────────────────────────────────────────────────────────
-  var LANGS = ['ru', 'en', 'pl'];
   var DICT = {
     ru: {
       title: 'Аквариум',
@@ -178,38 +161,8 @@
       bg: 'Сменить фон', bgSub: 'картинка, на фоне которой двигаются роботы',
       bgTitle: 'Выбери фон', back: '← назад'
     },
-    en: {
-      title: 'Aquarium',
-      hint: 'tap anywhere',
-      count0: 'no robots yet',
-      count: function (n) { return n + ' robot' + (n !== 1 ? 's' : ''); },
-      add: 'Add a robot', addSub: 'add a new one',
-      feed: 'Recharge', feedSub: 'robots gather for a charge-up',
-      bg: 'Change background', bgSub: 'the image behind the robots',
-      bgTitle: 'Pick a background', back: '← back'
-    },
-    pl: {
-      title: 'Akwarium',
-      hint: 'dotknij dowolne miejsce',
-      count0: 'jeszcze nie ma robotów',
-      count: function (n) {
-        var m = n % 10, h = n % 100;
-        var w = (n === 1) ? 'robot' : (m >= 2 && m <= 4 && (h < 12 || h > 14)) ? 'roboty' : 'robotów';
-        return n + ' ' + w;
-      },
-      add: 'Dodaj robota', addSub: 'dodaj nowego',
-      feed: 'Naładuj', feedSub: 'roboty zbiorą się na ładowanie',
-      bg: 'Zmień tło', bgSub: 'obrazek za robotami',
-      bgTitle: 'Wybierz tło', back: '← wstecz'
-    }
   };
-  var lang = 'ru';
-  try { var s = localStorage.getItem('aqua.lang'); if (s && DICT[s]) lang = s; } catch (e) {}
-  if (!DICT[lang]) {
-    var bl = (navigator.language || '').slice(0, 2).toLowerCase();
-    if (DICT[bl]) lang = bl;
-  }
-  function t(key) { return DICT[lang][key] || DICT.ru[key] || key; }
+  function t(key) { return DICT.ru[key] || key; }
 
   function applyLang() {
     document.getElementById('m-name').textContent = t('title');
@@ -224,24 +177,6 @@
     document.getElementById('taphint').textContent = t('hint');
     document.title = t('title');
     updateCount();
-  }
-
-  function mountLang() {
-    var row = document.getElementById('langrow');
-    LANGS.forEach(function (code) {
-      var btn = document.createElement('button');
-      btn.textContent = code.toUpperCase();
-      btn.type = 'button';
-      if (code === lang) btn.className = 'active';
-      btn.onclick = function () {
-        lang = code;
-        try { localStorage.setItem('aqua.lang', code); } catch (e) {}
-        row.querySelectorAll('button').forEach(function (b) { b.className = ''; });
-        btn.className = 'active';
-        applyLang();
-      };
-      row.appendChild(btn);
-    });
   }
 
   // ── constants ─────────────────────────────────────────────────────────
@@ -613,7 +548,6 @@
   }
 
   // ── init ───────────────────────────────────────────────────────────────
-  mountLang();
   applyLang();
   init();
 })();

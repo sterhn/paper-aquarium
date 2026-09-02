@@ -488,7 +488,7 @@
     return FishCapture.processPhoto(source, manifest).then(function (r) {
       result = r;
       document.getElementById('p-name').textContent =
-        I18N.t('cap.itis', { name: (r.titles && (r.titles[I18N.lang] || r.titles.ru)) || r.title });
+        I18N.t('cap.itis', { name: r.title });
       // ползунок стартует с авто-положения: бледный рисунок уже подкручен
       document.getElementById('boost').value = Math.round(r.boost.auto * 100);
       document.getElementById('boostrow').hidden = false;
@@ -736,7 +736,7 @@
     var fish = manifest.fish[0];
     Draw.fish = fish;
     document.getElementById('draw-name').textContent =
-      I18N.t('cap.itis', { name: (fish.titles && (fish.titles[I18N.lang] || fish.titles.ru)) || fish.title });
+      I18N.t('cap.itis', { name: fish.title });
 
     var pal = document.getElementById('palette');
     if (!pal.children.length) {
@@ -782,7 +782,7 @@
     var fish = Draw.fish; if (!fish || !Draw.base) return;
     var tex = drawTexture();
     result = {
-      kind: fish.name, titles: fish.titles, title: fish.title,
+      kind: fish.name, title: fish.title,
       boost: {
         texCanvas: tex, pvCanvas: tex,
         auto: 0, value: 0,
@@ -791,7 +791,7 @@
       }
     };
     document.getElementById('p-name').textContent =
-      I18N.t('cap.itis', { name: (fish.titles && (fish.titles[I18N.lang] || fish.titles.ru)) || fish.title });
+      I18N.t('cap.itis', { name: fish.title });
     document.getElementById('boostrow').hidden = true;   // нечего подкручивать: цвета уже сочные
     show('s-preview');
     show3D(fish.name);

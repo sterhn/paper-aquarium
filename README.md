@@ -67,12 +67,8 @@ aquarium” card, and a `?demo` link opens it with a trimmed menu — feed the
 fish or start your own. A screen opened with a PIN (`?tv`) never pops the
 menu by itself: that screen is for watching, the phone is for driving.
 
-**Languages.** Russian, English and Polish; on the first visit the device
-language is used, after that whatever the switcher was set to. All strings live
-in `assets/i18n.js` and the markup is annotated with `data-t` attributes. The
-colouring sheets are trilingual too: the caption under the fish is printed in
-the language of the page, while the corner markers are identical in every
-version — any printed sheet is recognised.
+**Language.** Russian only. All strings still live in `assets/i18n.js` and the
+markup is annotated with `data-t` attributes, so every caption is in one place.
 
 ## Running it
 
@@ -228,12 +224,10 @@ node server.js
 ```
 
 Open `http://localhost:8000`, create an aquarium, tap it and choose
-"🐠 Release a ready-made fish" — you should see 12 cards with thumbnails.
-Twelve, not twenty-eight: only species that have a colouring sheet make it into
-the picker — what can be coloured is what swims. The full list of converted
-models is served by `http://localhost:8000/api/pack` (28 there, with
-`sheet: true` on the species that have a sheet). Empty means the pack was not
-built — look for "пропуск" ("skipped") lines in the script's output.
+"🐠 Release a ready-made robot" — you should see one card with a thumbnail:
+the single robot model in `assets/models/pack/robot`. There is one colouring
+sheet for it, and painted robots from older versions that still carry a fish
+species name are mapped onto the same robot.
 
 ### Other models
 
@@ -254,9 +248,9 @@ conversion pitfalls are in
 | What | Where | Why |
 |---|---|---|
 | Silhouettes | `/tools/silhouettes.html` | traces the pack models, produces `contours.json` and the fins drawn over the body |
-| Robot silhouette | `node tools/robot-front-contour.js` | traces the robot from the front and rewrites the contour in the manifest and the SVG sheets; run make-pdf afterwards |
-| Sheets | `node tools/make-coloring.js` | builds 12 A4 sheets in three languages plus the manifest |
-| PDF | `node tools/make-pdf.js` | prints the sheets into `raskraski.<lang>.pdf` via headless Chrome; run after make-coloring |
+| Robot silhouette | `node tools/robot-front-contour.js` | traces the robot from the front into `tools/contours.json`; run make-coloring afterwards |
+| Sheets | `node tools/make-coloring.js` | builds the A4 sheet and the manifest from `tools/contours.json` |
+| PDF | `node tools/make-pdf.js` | prints the sheets into `raskraski.pdf` via headless Chrome; run after make-coloring |
 | Capture test | `/tools/test-capture.html` | runs every sheet through skew, rotation and noise |
 | Pack build | `tools/convert-pack.ps1` | FBX from the purchased archive → glTF |
 

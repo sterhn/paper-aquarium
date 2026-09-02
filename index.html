@@ -175,7 +175,6 @@
   @media (max-width: 760px) {
     .bycode { flex-basis: 100%; }
   }
-  .langrow { display: flex; justify-content: flex-end; margin: -4px 0 6px; }
   .langpick { display: inline-flex; gap: 4px; }
   .langpick button {
     appearance: none; cursor: pointer; font: inherit; font-size: 11.5px; letter-spacing: .5px;
@@ -220,7 +219,6 @@
     <!-- Ввод кода стоит рядом с заголовком: с пином это первое действие
          телевизора, и внизу страницы его искали дольше всего. -->
     <div class="bycode">
-      <div class="langrow"><span id="lang"></span></div>
       <h3 data-t="home.bycode.title"></h3>
       <p data-t="home.bycode.hint"></p>
       <form id="code-form">
@@ -277,7 +275,6 @@
   var box = document.getElementById('tanks');
   var empty = document.getElementById('empty');
 
-  I18N.mount(document.getElementById('lang'));
   document.title = I18N.t('home.title');
   // Смена языка перерисовывает карточки: в них счётчик рыбок и подписи.
   addEventListener('aqua:lang', function () { document.title = I18N.t('home.title'); render(); });

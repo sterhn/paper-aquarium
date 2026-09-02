@@ -408,28 +408,26 @@
     });
   }
 
-  var titles = {};   // вид → название на трёх языках, из манифеста раскрасок
+  var titles = {};   // вид → название из манифеста раскрасок
   fetch('/assets/coloring/manifest.json')
     .then(function (r) { return r.json(); })
     .then(function (m) {
-      m.fish.forEach(function (f) { titles[f.name] = f.titles || { ru: f.title }; });
+      m.fish.forEach(function (f) { titles[f.name] = f.title; });
       refresh();
     })
     .catch(refresh);
 
-  var LOCALE = { ru: 'ru-RU', en: 'en-GB', pl: 'pl-PL' };
 
   function fmtDate(iso) {
     try {
-      return new Date(iso).toLocaleString(LOCALE[I18N.lang] || 'ru-RU',
+      return new Date(iso).toLocaleString('ru-RU',
         { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
     } catch (e) { return iso || ''; }
   }
 
   function fishName(item) {
     var kind = item.type === 'pack' ? item.model : item.kind;
-    var t = titles[kind];
-    if (t) return t[I18N.lang] || t.ru;
+    if (titles[kind]) return titles[kind];
     // Вида нет в раскрасках — остаётся то, с чем рыбку записали.
     return item.title || kind;
   }

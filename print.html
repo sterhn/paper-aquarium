@@ -94,10 +94,6 @@ var Q = new URLSearchParams(location.search);
 var EMBED = Q.has('embed');
 if (EMBED) document.body.classList.add('embed');
 
-// ?lang= — для ссылок на конкретный язык и для генератора PDF: у headless
-// Chrome нет ни localStorage с выбором, ни нужного navigator.language.
-if (Q.get('lang')) I18N.set(Q.get('lang'));
-
 // Генератор печатает страницу целиком, не прокручивая, — ленивые картинки
 // ниже экрана так и не загрузятся, и в PDF уедут пустые листы.
 var PDF = Q.has('pdf');
@@ -106,7 +102,7 @@ var PDF = Q.has('pdf');
 // правильного размера, в отличие от «Сохранить как PDF» с чужими полями.
 var pdfLink = document.getElementById('pdfLink');
 function repdf() {
-  pdfLink.href = '/assets/coloring/raskraski.' + I18N.lang + '.pdf';
+  pdfLink.href = '/assets/coloring/raskraski.pdf';
   pdfLink.setAttribute('download', I18N.t('print.pdf.file'));
 }
 repdf();
@@ -141,16 +137,8 @@ function printOne(name) {
   print();
 }
 
-// Лист у каждого вида свой на каждый язык — подпись под рыбой печатается
-// на том же языке, что и страница. Метки в углах во всех версиях одни и те
-// же, так что распознаётся любой распечатанный лист.
-function sheetOf(f) {
-  return '/' + ((f.sheets && f.sheets[I18N.lang]) || f.svg).replace(/^\//, '');
-}
-
-function titleOf(f) {
-  return (f.titles && (f.titles[I18N.lang] || f.titles.ru)) || f.title;
-}
+function sheetOf(f) { return '/' + f.svg.replace(/^\//, ''); }
+function titleOf(f) { return f.title; }
 
 fetch('/assets/coloring/manifest.json')
   .then(function (r) { return r.json(); })

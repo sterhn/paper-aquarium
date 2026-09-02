@@ -1,22 +1,19 @@
-/* Силуэт робота с ЛИЦА — для листов раскраски и экрана рисования.
+/* Силуэт робота с ЛИЦА — контур для листа раскраски и экрана рисования.
  *
- *   node tools/robot-front-contour.js
+ *   node tools/robot-front-contour.js      → tools/contours.json['robot']
+ *   node tools/make-coloring.js            → лист, манифест
+ *   node tools/make-pdf.js                 → PDF
  *
  * Рыбу ребёнок раскрашивает сбоку: она плоская, и боковая проекция ложится
- * на модель без потерь. У робота сбоку нет ни лица, ни рук, ни груди —
- * всё, что он хочет нарисовать, смотрит вперёд. Поэтому робот на листе и на
- * экране стоит лицом к зрителю, и той же плоскостью текстура ложится на
- * модель (см. FishGLB.bake({uv: 'front'}) и capture.html).
+ * на модель без потерь (их обводит /tools/silhouettes.html). У робота сбоку
+ * нет ни лица, ни рук, ни груди — всё, что он хочет нарисовать, смотрит
+ * вперёд. Поэтому робот на листе и на экране стоит лицом к зрителю, и той же
+ * плоскостью текстура ложится на модель (FishGLB.bake({uv: 'front'})).
  *
  * Оси — как в glTF: +Y вверх, +Z к зрителю, +X вправо от зрителя.
- * Контур считаем в единицах модели: горизонталь = X, вертикаль = Y.
- *
- * На выходе правим на месте:
- *   · assets/coloring/manifest.json — contourModel, bboxModel, sheetTransform,
- *     view: 'front' у каждого вида, чья модель — этот робот;
- *   · assets/coloring/<вид>[.lang].svg — путь силуэта.
- * Метки, коды и подписи не трогаем: напечатанные листы остаются валидными.
- * После этого — node tools/make-pdf.js, иначе PDF отстанут от SVG.
+ * Контур в единицах модели: горизонталь = X, вертикаль = Y. В contours.json
+ * он лежит в том же формате, что и рыбьи: {contour: [[h, v]…], bbox: {z, y}},
+ * где z — горизонталь листа (у робота это X модели), y — вертикаль.
  */
 'use strict';
 
@@ -24,13 +21,12 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const MANIFEST = path.join(ROOT, 'assets', 'coloring', 'manifest.json');
+const CONTOURS = path.join(__dirname, 'contours.json');
 const MODEL = path.join(ROOT, 'assets', 'models', 'pack', 'robot', 'textured_mesh.glb');
-const MODEL_URL = '/assets/models/pack/robot/textured_mesh.glb';
+const NAME = 'robot';
 
 const SIZE = 1024;   // растр силуэта, px
 const PAD = 24;
-const FIT = 0.94;    // доля рабочего поля листа под габарит (как в make-coloring.js)
 const SIMPLIFY_PX = 2.2;   // Дуглас–Пекер: допуск в пикселях растра
 
 // ── GLB без Draco: позиции и индексы каждого примитива ──────────────────────
@@ -71,13 +67,12 @@ function readGlb(file) {
     if (nd.matrix) return nd.matrix;
     const t = nd.translation || [0, 0, 0], q = nd.rotation || [0, 0, 0, 1], s = nd.scale || [1, 1, 1];
     const [x, y, z, w] = q;
-    const m = [
+    return [
       (1 - 2 * (y * y + z * z)) * s[0], (2 * (x * y + z * w)) * s[0], (2 * (x * z - y * w)) * s[0], 0,
       (2 * (x * y - z * w)) * s[1], (1 - 2 * (x * x + z * z)) * s[1], (2 * (y * z + x * w)) * s[1], 0,
       (2 * (x * z + y * w)) * s[2], (2 * (y * z - x * w)) * s[2], (1 - 2 * (x * x + y * y)) * s[2], 0,
       t[0], t[1], t[2], 1
     ];
-    return m;
   }
   const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
   function walk(i, parent) {
@@ -109,7 +104,7 @@ function readGlb(file) {
       }
     });
   });
-  return { tris, json };
+  return tris;
 }
 
 // ── растр: проекция на XY (взгляд с +Z) ─────────────────────────────────────
@@ -134,8 +129,7 @@ function rasterize(tris) {
     const maxY = Math.min(SIZE - 1, Math.ceil(Math.max(ay, by, cy)));
     for (let y = minY; y <= maxY; y++) {
       const yc = y + 0.5;
-      // пересечения строки с рёбрами
-      let xs = [];
+      const xs = [];
       const edges = [[ax, ay, bx, by], [bx, by, cx, cy], [cx, cy, ax, ay]];
       for (const [x0, y0, x1, y1] of edges) {
         if ((y0 <= yc && y1 > yc) || (y1 <= yc && y0 > yc)) {
@@ -148,7 +142,7 @@ function rasterize(tris) {
       for (let x = x0; x <= x1; x++) mask[y * SIZE + x] = 1;
     }
   }
-  return { mask, box, scale, px, py };
+  return { mask, box, scale };
 }
 
 function morph(mask, grow, shrink) {
@@ -195,17 +189,16 @@ function largestComponent(mask) {
   return out;
 }
 
+// Всё, что не достижимо снаружи, — внутри силуэта: щели между рукой и телом
+// на листе не нужны, ребёнок красит робота одним пятном.
 function fillHoles(mask) {
-  // всё, что не достижимо снаружи, — внутри силуэта (щели между рукой и телом
-  // на листе не нужны: ребёнок красит робота одним пятном)
   const outside = new Uint8Array(SIZE * SIZE);
   const stack = [0];
   outside[0] = 1;
   while (stack.length) {
     const p = stack.pop();
     const x = p % SIZE, y = (p / SIZE) | 0;
-    const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-    for (const [dx, dy] of nb) {
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nx = x + dx, ny = y + dy;
       if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
       const q = ny * SIZE + nx;
@@ -261,66 +254,28 @@ function rdp(pts, eps) {
   return pts.filter((_, j) => keep[j]);
 }
 
-function sheetTransform(sheet, spanH, spanV) {
-  const workW = sheet.work.x1 - sheet.work.x0;
-  const workH = sheet.work.y1 - sheet.work.y0;
-  return {
-    scale: +(FIT * Math.min(workW / spanH, workH / spanV)).toFixed(4),
-    ox: sheet.w / 2,
-    oy: (sheet.work.y0 + sheet.work.y1) / 2
-  };
-}
-
 function main() {
-  const { tris } = readGlb(MODEL);
-  const r = rasterize(tris);
+  const r = rasterize(readGlb(MODEL));
   let mask = morph(r.mask, 2, 2);
   mask = largestComponent(mask);
   mask = fillHoles(mask);
   const boundary = traceBoundary(mask);
   const simple = rdp(boundary, SIMPLIFY_PX);
-  // пиксели → единицы модели: горизонталь X (вправо), вертикаль Y (вверх)
   const contour = simple.map(([x, y]) => [
     +(r.box.minX + (x - PAD) / r.scale).toFixed(4),
     +(r.box.maxY - (y - PAD) / r.scale).toFixed(4)
   ]);
   const bbox = {
-    // ключи как у рыб: z — горизонталь листа, y — вертикаль. У робота
-    // (view: 'front') горизонталь — это X модели, см. шапку файла.
     z: [+r.box.minX.toFixed(4), +r.box.maxX.toFixed(4)],
     y: [+r.box.minY.toFixed(4), +r.box.maxY.toFixed(4)]
   };
-  console.log(`контур: ${boundary.length} px → ${contour.length} точек; габарит ` +
-    `${(bbox.z[1] - bbox.z[0]).toFixed(3)} × ${(bbox.y[1] - bbox.y[0]).toFixed(3)}`);
 
-  const manifest = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
-  const st = sheetTransform(manifest.sheet, bbox.z[1] - bbox.z[0], bbox.y[1] - bbox.y[0]);
-  const d = contour.map(([h, v], i) =>
-    (i ? 'L' : 'M') + (st.ox + st.scale * h).toFixed(2) + ' ' + (st.oy - st.scale * v).toFixed(2)
-  ).join(' ') + ' Z';
-
-  let patched = 0, svgs = 0;
-  manifest.fish.forEach((f) => {
-    if (f.model !== MODEL_URL) return;
-    f.view = 'front';
-    f.contourModel = contour;
-    f.bboxModel = bbox;
-    f.sheetTransform = st;
-    delete f.eye;   // глаз рыбы: у робота лицо уже на модели
-    patched++;
-    const files = new Set([f.svg].concat(Object.values(f.sheets || {})));
-    files.forEach((rel) => {
-      const file = path.join(ROOT, rel);
-      if (!fs.existsSync(file)) return;
-      const src = fs.readFileSync(file, 'utf8');
-      const out = src.replace(/<path d="[^"]*"( fill="#fff" stroke=)/, '<path d="' + d + '"$1');
-      if (out === src) { console.warn('в ' + rel + ' не нашёл контур'); return; }
-      fs.writeFileSync(file, out);
-      svgs++;
-    });
-  });
-  fs.writeFileSync(MANIFEST, JSON.stringify(manifest, null, 1) + '\n');
-  console.log(`manifest: ${patched} видов; svg: ${svgs} файлов`);
+  let all = {};
+  try { all = JSON.parse(fs.readFileSync(CONTOURS, 'utf8')); } catch (e) { /* первый запуск */ }
+  all[NAME] = { contour, bbox };
+  fs.writeFileSync(CONTOURS, JSON.stringify(all) + '\n');
+  console.log(`${NAME}: ${boundary.length} px → ${contour.length} точек; габарит ` +
+    `${(bbox.z[1] - bbox.z[0]).toFixed(3)} × ${(bbox.y[1] - bbox.y[0]).toFixed(3)} → ${path.relative(ROOT, CONTOURS)}`);
 }
 
 main();

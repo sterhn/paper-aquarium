@@ -1,8 +1,10 @@
 /* Генератор листов раскраски.
  *
- *   1) открыть /tools/silhouettes.html, дождаться конца, «Скачать contours.json»
- *   2) положить contours.json рядом с этим файлом
- *   3) node tools/make-coloring.js
+ *   1) контуры в tools/contours.json: робота обводит
+ *      node tools/robot-front-contour.js, рыб — /tools/silhouettes.html
+ *      («Скачать contours.json», положить рядом с этим файлом)
+ *   2) node tools/make-coloring.js
+ *   3) node tools/make-pdf.js
  *
  * На выходе: assets/coloring/<вид>.svg и assets/coloring/manifest.json.
  *
@@ -40,44 +42,18 @@ const STROKE = 1.6;        // мм
 const STROKE_COLOR = '#8a8a8a';
 
 // ── виды ────────────────────────────────────────────────────────────────────
-// name — папка в assets/models/pack, titles — что видит ребёнок, на трёх
-// языках сайта (лист печатается на том, который выбран),
-// len — длина рыбки в аквариуме (метры сцены),
-// eye — [z, y] в долях длины тела; null = посчитать автоматически.
-const LANGS = ['ru', 'en', 'pl'];
+// name — ключ вида (папка в assets/models/pack и имя в pack.json),
+// title — что видит ребёнок, len — рост в аквариуме (метры сцены),
+// view — 'front': лист и текстура с лица (робот, контур считает
+// tools/robot-front-contour.js), иначе боковой силуэт рыбы из
+// /tools/silhouettes.html; eye — [z, y] в долях длины тела; null = посчитать.
 
 const SPECIES = [
-  { name: 'clownfish',              len: 1.5, eye: null,
-    titles: { ru: 'Рыба-клоун',        en: 'Clownfish',                pl: 'Błazenek' } },
-  { name: 'bluetang',               len: 1.9, eye: null,
-    titles: { ru: 'Голубой хирург',    en: 'Blue tang',                pl: 'Chirurg niebieski' } },
-  { name: 'chelmonrostratus',       len: 1.7, eye: null,
-    titles: { ru: 'Рыба-пинцет',       en: 'Copperband butterflyfish', pl: 'Chelmon' } },
-  { name: 'clowntriggerfish',       len: 2.1, eye: null,
-    titles: { ru: 'Спинорог',          en: 'Clown triggerfish',        pl: 'Rogatnica klaun' } },
-  { name: 'frenchangelfish',        len: 2.4, eye: null,
-    titles: { ru: 'Французский ангел', en: 'French angelfish',         pl: 'Pomakant francuski' } },
-  { name: 'fusilierfish',           len: 1.6, eye: null,
-    titles: { ru: 'Цезио',             en: 'Fusilier',                 pl: 'Cezjo' } },
-  { name: 'blackspottedsweetlips',  len: 2.3, eye: null,
-    titles: { ru: 'Ворчун',            en: 'Sweetlips',                pl: 'Chrząkiew' } },
-  { name: 'coralgrouper',           len: 2.6, eye: null,
-    titles: { ru: 'Групер',            en: 'Coral grouper',            pl: 'Strzępiel koralowy' } },
-  { name: 'browntang',              len: 1.8, eye: null,
-    titles: { ru: 'Бурый хирург',      en: 'Brown tang',               pl: 'Chirurg brązowy' } },
-  { name: 'bicolorangelfish',       len: 1.7, eye: null,
-    titles: { ru: 'Двухцветный ангел', en: 'Bicolor angelfish',        pl: 'Pomakant dwubarwny' } },
-  { name: 'bluecheekbutterflyfish', len: 1.5, eye: null,
-    titles: { ru: 'Рыба-бабочка',      en: 'Butterflyfish',            pl: 'Motylek' } },
-  { name: 'discus1',                len: 1.8, eye: null,
-    titles: { ru: 'Дискус',            en: 'Discus',                   pl: 'Paletka' } }
+  { name: 'robot', len: 1.8, view: 'front', title: 'Робот',
+    model: '/assets/models/pack/robot/textured_mesh.glb' }
 ];
 
-// Имя файла листа: русский лежит по старому адресу, остальные рядом с ним.
-// Так уже напечатанные и разосланные ссылки на .svg остаются рабочими.
-function sheetFile(name, lang) {
-  return name + (lang === 'ru' ? '' : '.' + lang) + '.svg';
-}
+function sheetFile(name) { return name + '.svg'; }
 
 // ── коды меток ──────────────────────────────────────────────────────────────
 const MIN_DIST = 4;   // минимум различий между любыми двумя кодами и их поворотами
@@ -159,11 +135,11 @@ function pickCodes(count) {
 
 // ── геометрия листа ─────────────────────────────────────────────────────────
 function sheetTransform(bbox) {
-  const spanY = bbox.y[1] - bbox.y[0];
+  const spanZ = bbox.z[1] - bbox.z[0], spanY = bbox.y[1] - bbox.y[0];
   const workW = SHEET.work.x1 - SHEET.work.x0;
   const workH = SHEET.work.y1 - SHEET.work.y0;
   return {
-    scale: +(FIT * Math.min(workW / 1, workH / spanY)).toFixed(4),
+    scale: +(FIT * Math.min(workW / spanZ, workH / spanY)).toFixed(4),
     ox: SHEET.w / 2,
     oy: (SHEET.work.y0 + SHEET.work.y1) / 2
   };
@@ -467,7 +443,7 @@ const INNER_FINS = (() => {
   } catch (e) { return {}; }
 })();
 
-function buildSvg(fish, lang) {
+function buildSvg(fish) {
   const st = fish.sheetTransform;
   const X = (z) => (st.ox + st.scale * z).toFixed(2);
   const Y = (y) => (st.oy - st.scale * y).toFixed(2);
@@ -490,14 +466,16 @@ function buildSvg(fish, lang) {
   const inner = (INNER_FINS[fish.name] || []).map((line) =>
     line.map((p, i) => `${i ? 'L' : 'M'}${X(p[0])} ${Y(p[1])}`).join(' '));
 
-  for (const line of finLines(pts).concat(inner)) {
+  // У робота плавников нет, а лицо уже на модели — рисуем один контур.
+  const decor = fish.view === 'front' ? [] : finLines(pts).concat(inner);
+  for (const line of decor) {
     parts.push(`  <path d="${line}" fill="none" stroke="${FIN.color}" stroke-width="${FIN.width}" ` +
                `stroke-dasharray="${FIN.dash}" stroke-linecap="round" stroke-linejoin="round"/>`);
   }
   parts.push(
     // Глаз на листе не печатаем: ребёнок рисует свой, где захочет. Координата
     // всё равно считается и лежит в манифесте — вернуть подсказку легко.
-    `  <text x="${SHEET.w / 2}" y="197" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="7" font-weight="600" fill="#444">${fish.titles[lang]}</text>`,
+    `  <text x="${SHEET.w / 2}" y="197" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="7" font-weight="600" fill="#444">${fish.title}</text>`,
     '</svg>'
   );
   return parts.join('\n') + '\n';
@@ -525,16 +503,10 @@ function main() {
     const f = {
       id: i + 1,
       name: s.name,
-      // title и svg — русские: так манифест читали до появления языков,
-      // и старые ссылки на листы от этого не ломаются.
-      title: s.titles.ru,
-      titles: s.titles,
-      model: '/assets/models/pack/' + s.name + '/' + s.name + '.gltf',
-      svg: 'assets/coloring/' + sheetFile(s.name, 'ru'),
-      sheets: LANGS.reduce((acc, lang) => {
-        acc[lang] = 'assets/coloring/' + sheetFile(s.name, lang);
-        return acc;
-      }, {}),
+      title: s.title,
+      model: s.model || '/assets/models/pack/' + s.name + '/' + s.name + '.gltf',
+      svg: 'assets/coloring/' + sheetFile(s.name),
+      view: s.view || 'side',
       length: s.len,
       markers: {
         tl: bitsOf(codes[i * 4]),
@@ -546,7 +518,7 @@ function main() {
       bboxModel: c.bbox
     };
     f.sheetTransform = sheetTransform(c.bbox);
-    f.eye = s.eye || eyeAt(c.contour, c.bbox);
+    if (f.view !== 'front') f.eye = s.eye || eyeAt(c.contour, c.bbox);
     return f;
   });
 
@@ -557,9 +529,7 @@ function main() {
   }
 
   for (const f of fish) {
-    for (const lang of LANGS) {
-      fs.writeFileSync(path.join(OUT, sheetFile(f.name, lang)), buildSvg(f, lang), 'utf8');
-    }
+    fs.writeFileSync(path.join(OUT, sheetFile(f.name)), buildSvg(f), 'utf8');
   }
   fs.writeFileSync(
     path.join(OUT, 'manifest.json'),
@@ -587,7 +557,7 @@ function main() {
   fish.forEach((f) => console.log(
     '  ' + f.name.padEnd(24) + f.title.padEnd(20) +
     'масштаб ' + String(f.sheetTransform.scale).padEnd(9) +
-    'глаз ' + f.eye.join(', ')
+    (f.eye ? 'глаз ' + f.eye.join(', ') : 'с лица')
   ));
 }
 

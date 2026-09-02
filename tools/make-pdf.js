@@ -2,11 +2,10 @@
  *
  *   node tools/make-pdf.js        (или npm run pdf)
  *
- * На выходе: assets/coloring/raskraski.<ru|en|pl>.pdf — все листы одним
- * файлом, по одному PDF на язык. Файлы статические и едут в git: генерить
+ * На выходе: assets/coloring/raskraski.pdf — все листы одним файлом. Файлы статические и едут в git: генерить
  * их на проде не из чего — там нет Chrome.
  *
- * Печатает print.html?lang=xx&pdf=1 через headless Chrome (или Edge — он
+ * Печатает print.html?pdf=1 через headless Chrome (или Edge — он
  * есть на любой Windows и понимает те же флаги). Свой мини-сервер поднимаем
  * потому, что странице нужны абсолютные пути /assets/... — с file:// они
  * не работают, а тащить сюда весь server.js с его data/ незачем.
@@ -23,7 +22,6 @@ const { execFile } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const OUT = path.join(ROOT, 'assets', 'coloring');
-const LANGS = ['ru', 'en', 'pl'];
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -82,9 +80,9 @@ function serve() {
 
   console.log('Браузер: ' + chrome);
   try {
-    for (const lang of LANGS) {
-      const out = path.join(OUT, 'raskraski.' + lang + '.pdf');
-      const url = 'http://127.0.0.1:' + port + '/print.html?lang=' + lang + '&pdf=1';
+    {
+      const out = path.join(OUT, 'raskraski.pdf');
+      const url = 'http://127.0.0.1:' + port + '/print.html?pdf=1';
       // Chrome запускается асинхронно: страницу ему отдаёт наш же сервер,
       // и синхронный запуск запер бы event loop — Chrome ждёт страницу,
       // сервер ждёт Chrome.

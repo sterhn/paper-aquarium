@@ -85,13 +85,28 @@
 
   // skel — результат FishFrame.fromSkeleton (оси и голова по анимации) либо
   // null: тогда всё решают габариты.
-  function normalizeFish(root, targetLen, skel) {
+  // upright — робот (spec.view === 'front'): модель уже стоит как надо
+  // (glTF: +Y вверх, +Z — лицо) и плывёт стоя, лицом вперёд. Рыбий разбор
+  // осей положил бы её на бок. Рост задаёт targetLen.
+  function normalizeFish(root, targetLen, skel, upright) {
     root.updateWorldMatrix(true, true);
     var axes = skel && skel.axes;
     var w = fishFrame(root, true, axes);
     var local = fishFrame(root, false, axes);
     if (skel && typeof skel.headAtMax === 'boolean') {
       w.headAtMax = skel.headAtMax; local.headAtMax = skel.headAtMax;
+    }
+
+    if (upright) {
+      root.position.sub(w.center);
+      return {
+        quat: new THREE.Quaternion(),
+        scale: targetLen / (w.size.y || 1),
+        bodyMask: maskVec('z'),
+        latMask: maskVec('x'),
+        range: [local.box.min.z, local.box.max.z],
+        headAtMax: true
+      };
     }
 
     var quat = frameQuat(w);
@@ -171,7 +186,8 @@
         function (gltf) {
           spec.gltf = gltf;
           spec.info = normalizeFish(gltf.scene, spec.length,
-            typeof spec.headAtMax === 'boolean' ? { headAtMax: spec.headAtMax } : skelOf(gltf));
+            typeof spec.headAtMax === 'boolean' ? { headAtMax: spec.headAtMax } : skelOf(gltf),
+            spec.view === 'front');
           ok++;
           if (--left === 0) onDone(ok);
         },
@@ -280,9 +296,10 @@
     var w = fishFrame(root, true, skel && skel.axes);
     if (typeof spec.headAtMax === 'boolean') w.headAtMax = spec.headAtMax;
     else if (skel && typeof skel.headAtMax === 'boolean') w.headAtMax = skel.headAtMax;
-    var s = spec.length / (w.size[w.body] || 1);
+    var upright = spec.view === 'front';
+    var s = spec.length / ((upright ? w.size.y : w.size[w.body]) || 1);
     var M = new THREE.Matrix4().makeScale(s, s, s)
-      .multiply(new THREE.Matrix4().makeRotationFromQuaternion(frameQuat(w)))
+      .multiply(new THREE.Matrix4().makeRotationFromQuaternion(upright ? new THREE.Quaternion() : frameQuat(w)))
       .multiply(new THREE.Matrix4().makeTranslation(-w.center.x, -w.center.y, -w.center.z));
 
     var parts = [];

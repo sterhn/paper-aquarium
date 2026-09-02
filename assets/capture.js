@@ -469,7 +469,6 @@
       resolve({
         kind: kind,
         title: fish.title,
-        titles: fish.titles || null,   // название вида на языках сайта
         texture: tex.toDataURL('image/png'),
         preview: pv.toDataURL('image/png'),
         boost: boost

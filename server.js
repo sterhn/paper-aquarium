@@ -926,18 +926,7 @@ function cacheControl(ext, url) {
 }
 
 // Короткий адрес для чатов и описаний: /raskraski.pdf ведёт на PDF со всеми
-// листами на языке браузера. Логика выбора та же, что в i18n.js: соседям по
-// алфавиту — русский, всем прочим — английский.
-function coloringPdf(req) {
-  const codes = String(req.headers['accept-language'] || '')
-    .split(',').map((p) => p.trim().slice(0, 2).toLowerCase());
-  for (const code of codes) {
-    if (code === 'ru' || code === 'en' || code === 'pl') return code;
-    if (code === 'be' || code === 'uk' || code === 'kk') return 'ru';
-  }
-  return 'en';
-}
-
+// листами.
 http.createServer((req, res) => {
   const url = decodeURIComponent(req.url.split('?')[0]);
 
@@ -945,9 +934,8 @@ http.createServer((req, res) => {
 
   if (url === '/raskraski.pdf') {
     res.writeHead(302, {
-      Location: '/assets/coloring/raskraski.' + coloringPdf(req) + '.pdf',
-      'Cache-Control': 'no-store',
-      Vary: 'Accept-Language'
+      Location: '/assets/coloring/raskraski.pdf',
+      'Cache-Control': 'no-store'
     });
     return res.end();
   }
