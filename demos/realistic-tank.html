@@ -753,7 +753,7 @@
       // Тело гнём сами, если его не гнёт клип: либо скелета нет вовсе, либо
       // в клипе шевелятся одни плавники (см. clipBeatHz). Скиннинг при этом
       // остаётся — плавники продолжают работать от своего клипа.
-      var bend = beatHz ? 0 : (spec.bend || 0.35);
+      var bend = beatHz ? 0 : (spec.bend !== undefined ? spec.bend : 0.35);
       if (bend > 0) addBend(o.material, spec.info, bend, phase);
     });
 
@@ -769,6 +769,7 @@
     this.mesh = built.group;
     this.mixer = built.mixer;
     this.beatHz = built.beatHz;
+    this.upright = !!spec.upright;
     this.len = spec.length || 2;
     // Половина длины рыбы: на неё поджимаются границы, чтобы за край кадра
     // не торчал ни нос, ни хвост.
@@ -888,8 +889,14 @@
 
     this.pos.addScaledVector(this.vel, dt);
     this.mesh.position.copy(this.pos);
-    this.mesh.lookAt(_l.copy(this.pos).add(this.vel));
-    this.mesh.rotation.z += Math.sin(t * 2.5 + this.phase) * 0.015;
+    if (this.upright) {
+      // Робот стоит вертикально: разворачиваем только по Y (рыскание),
+      // лицо смотрит по ходу движения (+Z модели → направление скорости).
+      this.mesh.rotation.set(0, Math.atan2(this.vel.x, this.vel.z), 0);
+    } else {
+      this.mesh.lookAt(_l.copy(this.pos).add(this.vel));
+      this.mesh.rotation.z += Math.sin(t * 2.5 + this.phase) * 0.015;
+    }
 
     // Скелетная анимация Swim там, где она есть; изгиб шейдером — где нет.
     //
@@ -1131,6 +1138,7 @@
         // плавник. Планарная UV живёт в вершинах и от скиннинга не съезжает.
         gltf: { scene: tpl.scene, animations: base.gltf.animations || [] },
         info: base.info,
+        upright: !!(paintedSpec[paintedModel(kind)] && paintedSpec[paintedModel(kind)].view === 'front'),
         speed: 1.7, bend: 0,
         // Модель шаблона потом домасштабируется до len, поэтому настоящая
         // длина рыбки в сцене — именно она.
@@ -1197,12 +1205,13 @@
       packModels[name] = 'loading';
       gltfLoader().load(item.url, function (gltf) {
         var known = paintedSpec[name];
+        var isUpright = !!(known && known.view === 'front');
         var spec = {
-          name: name, gltf: gltf, bend: 0,
+          name: name, gltf: gltf, bend: 0, upright: isUpright,
           length: known && known.length ? known.length : PACK_LEN
         };
         spec.info = normalizeFish(gltf.scene, spec.length, FishFrame.fromSkeleton(gltf),
-          !!(known && known.view === 'front'));
+          isUpright);
         var b = FishFrame.bounds(gltf.scene);
         (gltf.animations || []).forEach(function (clip) {
           stripRootMotion(clip, Math.max(b.size.x, b.size.y, b.size.z));
