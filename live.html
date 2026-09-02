@@ -306,7 +306,7 @@
     this.mesh.traverse(function (n) {
       if (n.isMesh) {
         n.material = n.material.clone();
-        n.material.color.set(color);
+        if (!n.material.map) n.material.color.set(color);
         n.material.emissive = new THREE.Color(color);
         n.material.emissiveIntensity = 0.12;
       }
