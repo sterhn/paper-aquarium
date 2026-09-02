@@ -11,6 +11,7 @@
 assets/models/pack/*
 !assets/models/pack/pack.json
 !assets/models/pack/spherebot/
+!assets/models/pack/robot/
 
 # Черновики, скачанные модели и старые демки. Часть моделей оттуда —
 # Personal Use или вовсе без внятной лицензии, поэтому папка целиком мимо
