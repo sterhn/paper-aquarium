@@ -1,10 +1,7 @@
 /* Генератор листов раскраски.
  *
- *   1) контуры в tools/contours.json: робота обводит
- *      node tools/robot-front-contour.js, рыб — /tools/silhouettes.html
- *      («Скачать contours.json», положить рядом с этим файлом)
- *   2) node tools/make-coloring.js
- *   3) node tools/make-pdf.js
+ *   node tools/make-coloring.js
+ *   node tools/make-pdf.js
  *
  * На выходе: assets/coloring/<вид>.svg и assets/coloring/manifest.json.
  *
@@ -12,9 +9,18 @@
  * 16 внутренних клеток кодируют «какой это вид» и «какой это угол», по ним
  * capture.js находит лист на фотографии и выправляет перспективу.
  *
- * Коды подбираются здесь, а не берутся из головы: capture.js сравнивает биты
- * ТОЧНО, без допуска, поэтому два вида, отличающиеся на одну клетку, — это
- * тихая подмена рыбы при одном неверно прочитанном пикселе. Ниже коды
+ * Фигурки — не модели, а простые тела с развёрткой на листе:
+ *   · кубик  — крестообразная развёртка с язычками для склейки, как у
+ *              бумажных коробочек: шесть квадратов, каждый — грань кубика;
+ *   · планета — одна полоска 2:1: она оборачивается вокруг шарика как
+ *              карта мира вокруг глобуса (равнопромежуточная проекция).
+ * Ребёнок красит развёртку, телефон снимает лист, и та же самая картинка
+ * ложится на фигурку в сцене (assets/shape.js знает, какой прямоугольник
+ * листа — какая грань). Лист заодно можно вырезать и склеить руками.
+ *
+ * Коды меток подбираются здесь, а не берутся из головы: capture.js сравнивает
+ * биты ТОЧНО, без допуска, поэтому два вида, отличающиеся на одну клетку, —
+ * это тихая подмена вида при одном неверно прочитанном пикселе. Ниже коды
  * разводятся так, чтобы между любыми двумя (с учётом всех поворотов)
  * расстояние Хэмминга было не меньше MIN_DIST.
  */
@@ -31,26 +37,29 @@ const SHEET = {
   w: 297, h: 210,
   marker: { size: 18, margin: 8, cells: 6 },
   markerPositions: { tl: [8, 8], tr: [271, 8], bl: [8, 184], br: [271, 184] },
-  // поле для рыбы: не залезаем на метки и оставляем поля под пальцы и принтер
-  work: { x0: 36, x1: 261, y0: 36, y1: 166 }
+  // поле для развёртки: не залезаем на метки и оставляем поля под принтер.
+  // capture.js меряет по нему баланс белого — по бумаге вокруг развёртки.
+  work: { x0: 36, x1: 261, y0: 30, y1: 180 }
 };
-const FIT = 0.94;          // доля рабочего поля, которую занимает габарит рыбы
-// Контур тонкий и серый: жирная чёрная обводка спорила с раскраской ребёнка,
-// а после съёмки от неё оставалась тёмная кайма по краю рыбы. Ширину и цвет
-// знает и capture.js — он срезает полосу вдоль контура (TRIM_MM).
-const STROKE = 1.6;        // мм
-const STROKE_COLOR = '#8a8a8a';
+
+// Линии на листе. Сплошная — где резать, пунктир — где сгибать. Обе серые
+// и тонкие: чёрная жирная обводка спорила бы с рисунком ребёнка, а после
+// съёмки оставалась бы каймой. Внутрь грани попадает только пунктир по
+// краю, и его capture/shape.js срезают: грань читается с отступом TRIM_MM.
+const CUT = { color: '#8a8a8a', width: 0.6 };
+const FOLD = { color: '#b8b8b8', width: 0.5, dash: '2.2 1.8' };
+const HINT = { color: '#d6d6d6', width: 0.7 };   // подсказки внутри граней
+const TRIM_MM = 1.8;
 
 // ── виды ────────────────────────────────────────────────────────────────────
-// name — ключ вида (папка в assets/models/pack и имя в pack.json),
-// title — что видит ребёнок, len — рост в аквариуме (метры сцены),
-// view — 'front': лист и текстура с лица (робот, контур считает
-// tools/robot-front-contour.js), иначе боковой силуэт рыбы из
-// /tools/silhouettes.html; eye — [z, y] в долях длины тела; null = посчитать.
-
+// name — ключ вида (имя записи в pack.json и в аквариуме), title — что видит
+// ребёнок, shape — что строит сцена, size — размер фигурки в аквариуме
+// (единицы сцены; аквариум примерно 24 × 13 × 24).
 const SPECIES = [
-  { name: 'robot', len: 1.8, view: 'front', title: 'Робот',
-    model: '/assets/models/pack/robot/textured_mesh.glb' }
+  { name: 'cube', title: 'Кубик', shape: 'cube', size: 1.7,
+    face: 45, tab: 6, hint: 'Вырежи по сплошной линии, согни по пунктиру, склей за язычки — и кубик готов' },
+  { name: 'planet', title: 'Планета', shape: 'sphere', size: 1.9,
+    strip: [200, 100], hint: 'Раскрась полоску — она обернётся вокруг планеты. Левый и правый край сойдутся' }
 ];
 
 function sheetFile(name) { return name + '.svg'; }
@@ -133,288 +142,78 @@ function pickCodes(count) {
   throw new Error('не хватило кодов: нужно ' + count + ' при разбросе от ' + MIN_DIST);
 }
 
-// ── геометрия листа ─────────────────────────────────────────────────────────
-function sheetTransform(bbox) {
-  const spanZ = bbox.z[1] - bbox.z[0], spanY = bbox.y[1] - bbox.y[0];
-  const workW = SHEET.work.x1 - SHEET.work.x0;
-  const workH = SHEET.work.y1 - SHEET.work.y0;
-  return {
-    scale: +(FIT * Math.min(workW / spanZ, workH / spanY)).toFixed(4),
-    ox: SHEET.w / 2,
-    oy: (SHEET.work.y0 + SHEET.work.y1) / 2
+// ── развёртки ───────────────────────────────────────────────────────────────
+// Все прямоугольники — [x, y, w, h] в миллиметрах листа, y вниз.
+const r2 = (v) => Math.round(v * 100) / 100;
+const rect = (x, y, w, h) => [r2(x), r2(y), r2(w), r2(h)];
+
+function bboxOf(rects) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const r of rects) {
+    x0 = Math.min(x0, r[0]); y0 = Math.min(y0, r[1]);
+    x1 = Math.max(x1, r[0] + r[2]); y1 = Math.max(y1, r[1] + r[3]);
+  }
+  return rect(x0, y0, x1 - x0, y1 - y0);
+}
+
+// Кубик: крест из шести квадратов. В ряду — left, front, right, back; над
+// front — top, под ним — bottom. Язычки на семи свободных рёбрах, которые
+// при склейке встречаются с чужой гранью. Какая грань куда ложится в 3D,
+// знает assets/shape.js — там же и расписано, почему именно так.
+function cubeNet(s, tab) {
+  const cx = SHEET.w / 2;
+  const cy = (SHEET.work.y0 + SHEET.work.y1) / 2;
+  const netW = 4 * s + tab, netH = 3 * s + 2 * tab;
+  const x0 = cx - netW / 2, y0 = cy - netH / 2 + tab;   // y0 — верх грани top
+  const yStrip = y0 + s;
+  const faces = {
+    left: rect(x0, yStrip, s, s),
+    front: rect(x0 + s, yStrip, s, s),
+    right: rect(x0 + 2 * s, yStrip, s, s),
+    back: rect(x0 + 3 * s, yStrip, s, s),
+    top: rect(x0 + s, y0, s, s),
+    bottom: rect(x0 + s, yStrip + s, s, s)
   };
+  // Язычок — трапеция на ребре: side говорит, с какой стороны грани он растёт.
+  const tabs = [
+    { face: 'top', side: 'top' }, { face: 'top', side: 'left' }, { face: 'top', side: 'right' },
+    { face: 'bottom', side: 'bottom' }, { face: 'bottom', side: 'left' }, { face: 'bottom', side: 'right' },
+    { face: 'back', side: 'right' }
+  ].map((t) => tabPoly(faces[t.face], t.side, tab));
+  // Сгибы — общие рёбра соседних граней и основания язычков.
+  const folds = [
+    [[x0 + s, yStrip], [x0 + s, yStrip + s]],
+    [[x0 + 2 * s, yStrip], [x0 + 2 * s, yStrip + s]],
+    [[x0 + 3 * s, yStrip], [x0 + 3 * s, yStrip + s]],
+    [[x0 + s, yStrip], [x0 + 2 * s, yStrip]],
+    [[x0 + s, yStrip + s], [x0 + 2 * s, yStrip + s]]
+  ].concat(tabs.map((t) => [t[0], t[3]]));
+  return { faces, tabs, folds };
 }
 
-// Глаз: смещаемся от кончика носа вглубь, пока тело не станет достаточно
-// высоким — так глаз не попадает на длинное рыло у пинцета и не уезжает
-// на середину туловища у круглых рыб.
-function eyeAt(contour, bbox) {
-  const spanY = bbox.y[1] - bbox.y[0];
-  const at = (z) => {
-    let lo = Infinity, hi = -Infinity;
-    for (let i = 0; i < contour.length; i++) {
-      const a = contour[i], b = contour[(i + 1) % contour.length];
-      if ((a[0] - z) * (b[0] - z) > 0) continue;          // отрезок не пересекает z
-      const t = Math.abs(b[0] - a[0]) < 1e-9 ? 0 : (z - a[0]) / (b[0] - a[0]);
-      const y = a[1] + (b[1] - a[1]) * t;
-      if (y < lo) lo = y;
-      if (y > hi) hi = y;
-    }
-    return hi > lo ? { lo, hi, h: hi - lo } : null;
-  };
-
-  let z = 0.5;
-  for (let step = 0; step < 60; step++) {
-    z = 0.5 - step * 0.01;
-    const s = at(z);
-    if (s && s.h > spanY * 0.55) break;
+// Трапеция язычка: основание — всё ребро, верх короче на скосы в 1.5 мм.
+function tabPoly(f, side, tab) {
+  const [x, y, w, h] = f, k = 1.5;
+  switch (side) {
+    case 'top': return [[x, y], [x + k, y - tab], [x + w - k, y - tab], [x + w, y]];
+    case 'bottom': return [[x + w, y + h], [x + w - k, y + h + tab], [x + k, y + h + tab], [x, y + h]];
+    case 'left': return [[x, y + h], [x - tab, y + h - k], [x - tab, y + k], [x, y]];
+    case 'right': return [[x + w, y], [x + w + tab, y + k], [x + w + tab, y + h - k], [x + w, y + h]];
   }
-  z -= 0.035;                       // ещё чуть вглубь головы
-  const s = at(z) || { lo: 0, hi: spanY * 0.5 };
-  return [+z.toFixed(4), +(s.lo + (s.hi - s.lo) * 0.68).toFixed(4)];
+  throw new Error('нет такой стороны: ' + side);
 }
 
-// ── зона плавников ──────────────────────────────────────────────────────────
-// Силуэт рыбы — один замкнутый контур: где кончается тело и начинается плавник,
-// на листе не видно, и ребёнок красит рыбу одним пятном. Границу считаем сами.
-//
-// Приём простой: «открытие» силуэта. Стираем от края полосу шириной R —
-// тонкие выросты (плавники, хвост) исчезают, остаётся тело; потом возвращаем
-// полосу обратно. Граница получившегося тела совпадает с контуром почти везде,
-// кроме мест, где были срезаны плавники, — там она проходит поперёк их
-// основания. Эти-то куски и рисуем.
-//
-// R берём от самой толстой части рыбы, а не фиксированным: у дискуса тело
-// круглое и высокое, у цезио — узкое, одна константа не подошла бы обоим.
-const FIN = {
-  grid: 0.4,          // мм на клетку растра
-  bodyPart: 0.38,     // R = столько от полутолщины самого толстого места
-  keepMM: 1.2,        // мм; всё, что идёт вплотную к контуру, — не срез, а он сам
-  minLen: 5,          // мм; короче — это шум, а не основание плавника
-  minDepth: 1.8,      // мм; насколько срез должен отойти от контура вглубь
-  reach: 5,           // мм; на столько продлеваем концы, чтобы упереть в контур
-  // Пунктир, а не сплошная: сплошную линию ребёнок обводит как часть рисунка,
-  // пунктир читается как подсказка «здесь плавник».
-  // Светлее контура нарочно: всё, что напечатано внутри рыбы, попадает
-  // на фотографию и остаётся на текстуре. Бледный пунктир ребёнок закрасит,
-  // а если и нет — на рыбке он почти не виден.
-  color: '#c2c2c2',
-  width: 0.55,
-  dash: '2.2 2'
-};
-
-// Расстояние до ближайшей клетки маски, в клетках. Двухпроходный чамфер:
-// точности 2% нам хватает, а честный евклид тут ни к чему.
-function distanceTo(mask, w, h) {
-  const INF = 1e9;
-  const d = new Float32Array(w * h);
-  for (let k = 0; k < w * h; k++) d[k] = mask[k] ? 0 : INF;
-  const D1 = 1, D2 = Math.SQRT2;
-  const at = (i, j) => (i < 0 || j < 0 || i >= w || j >= h) ? INF : d[j * w + i];
-  for (let j = 0; j < h; j++) {
-    for (let i = 0; i < w; i++) {
-      const k = j * w + i;
-      d[k] = Math.min(d[k], at(i - 1, j) + D1, at(i, j - 1) + D1,
-                            at(i - 1, j - 1) + D2, at(i + 1, j - 1) + D2);
-    }
-  }
-  for (let j = h - 1; j >= 0; j--) {
-    for (let i = w - 1; i >= 0; i--) {
-      const k = j * w + i;
-      d[k] = Math.min(d[k], at(i + 1, j) + D1, at(i, j + 1) + D1,
-                            at(i + 1, j + 1) + D2, at(i - 1, j + 1) + D2);
-    }
-  }
-  return d;
+// Планета: одна полоска 2:1 по центру рабочего поля.
+function stripNet(w, h) {
+  const x = SHEET.w / 2 - w / 2;
+  const y = (SHEET.work.y0 + SHEET.work.y1) / 2 - h / 2;
+  return { faces: { map: rect(x, y, w, h) }, tabs: [], folds: [] };
 }
 
-function pointInPoly(pts, x, y) {
-  let inside = false;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const a = pts[i], b = pts[j];
-    if ((a[1] > y) !== (b[1] > y) &&
-        x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside;
-  }
-  return inside;
-}
-
-function distToPoly(pts, x, y) {
-  let best = Infinity;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const ax = pts[j][0], ay = pts[j][1], bx = pts[i][0], by = pts[i][1];
-    const vx = bx - ax, vy = by - ay;
-    const len2 = vx * vx + vy * vy;
-    let t = len2 ? ((x - ax) * vx + (y - ay) * vy) / len2 : 0;
-    t = t < 0 ? 0 : t > 1 ? 1 : t;
-    const dx = x - (ax + vx * t), dy = y - (ay + vy * t);
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < best) best = dist;
-  }
-  return best;
-}
-
-// Маршевые квадраты по клеткам-центрам: на выходе отрезки границы маски.
-function marchingSquares(mask, w, h, toMM) {
-  const segs = [];
-  const m = (i, j) => (i < 0 || j < 0 || i >= w || j >= h) ? 0 : mask[j * w + i];
-  for (let j = 0; j < h - 1; j++) {
-    for (let i = 0; i < w - 1; i++) {
-      const tl = m(i, j), tr = m(i + 1, j), br = m(i + 1, j + 1), bl = m(i, j + 1);
-      const code = (tl << 3) | (tr << 2) | (br << 1) | bl;
-      if (code === 0 || code === 15) continue;
-      const top = [i + 0.5, j], right = [i + 1, j + 0.5];
-      const bottom = [i + 0.5, j + 1], left = [i, j + 0.5];
-      const push = (a, b) => segs.push([toMM(a), toMM(b)]);
-      switch (code) {
-        case 1: case 14: push(left, bottom); break;
-        case 2: case 13: push(bottom, right); break;
-        case 3: case 12: push(left, right); break;
-        case 4: case 11: push(top, right); break;
-        case 5: push(left, top); push(bottom, right); break;
-        case 6: case 9: push(top, bottom); break;
-        case 7: case 8: push(left, top); break;
-        case 10: push(left, bottom); push(top, right); break;
-      }
-    }
-  }
-  return segs;
-}
-
-// Отрезки в ломаные: концы совпадают до долей клетки, поэтому склеиваем
-// по округлённым координатам.
-function chain(segs, eps) {
-  const key = (p) => Math.round(p[0] / eps) + ':' + Math.round(p[1] / eps);
-  const ends = new Map();
-  segs.forEach((s, i) => {
-    for (const p of s) {
-      const k = key(p);
-      if (!ends.has(k)) ends.set(k, []);
-      ends.get(k).push(i);
-    }
-  });
-  const used = new Set();
-  const lines = [];
-  for (let i = 0; i < segs.length; i++) {
-    if (used.has(i)) continue;
-    used.add(i);
-    const line = [segs[i][0], segs[i][1]];
-    for (const dir of [0, 1]) {
-      for (;;) {
-        const tip = dir ? line[0] : line[line.length - 1];
-        const next = (ends.get(key(tip)) || []).find((j) => !used.has(j));
-        if (next === undefined) break;
-        used.add(next);
-        const s = segs[next];
-        const near = key(s[0]) === key(tip) ? s[1] : s[0];
-        if (dir) line.unshift(near); else line.push(near);
-      }
-    }
-    lines.push(line);
-  }
-  return lines;
-}
-
-function polyLen(line) {
-  let sum = 0;
-  for (let i = 1; i < line.length; i++) {
-    sum += Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]);
-  }
-  return sum;
-}
-
-// Прореживание Дугласа–Пекера: в SVG незачем сотня точек там, где хватает пяти.
-function simplify(line, tol) {
-  if (line.length < 3) return line;
-  let maxD = -1, idx = 0;
-  const a = line[0], b = line[line.length - 1];
-  for (let i = 1; i < line.length - 1; i++) {
-    const d = distToPoly([a, b], line[i][0], line[i][1]);
-    if (d > maxD) { maxD = d; idx = i; }
-  }
-  if (maxD <= tol) return [a, b];
-  return simplify(line.slice(0, idx + 1), tol).slice(0, -1).concat(simplify(line.slice(idx), tol));
-}
-
-// Луч из точки в заданном направлении: где он пересечёт контур. Нужен,
-// чтобы концы среза упирались в силуэт, а не висели в воздухе.
-function rayHit(pts, px, py, dx, dy, maxT) {
-  let best = null;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const ax = pts[j][0], ay = pts[j][1], bx = pts[i][0], by = pts[i][1];
-    const ex = bx - ax, ey = by - ay;
-    const den = dx * ey - dy * ex;
-    if (Math.abs(den) < 1e-9) continue;
-    const t = ((ax - px) * ey - (ay - py) * ex) / den;
-    const u = ((ax - px) * dy - (ay - py) * dx) / den;
-    if (t <= 0.01 || t > maxT || u < 0 || u > 1) continue;
-    if (best === null || t < best) best = t;
-  }
-  return best === null ? null : [px + dx * best, py + dy * best];
-}
-
-function extendEnds(line, pts) {
-  const out = line.slice();
-  const ends = [[out[0], out[1], 'head'], [out[out.length - 1], out[out.length - 2], 'tail']];
-  for (const [tip, prev, where] of ends) {
-    const dx = tip[0] - prev[0], dy = tip[1] - prev[1];
-    const len = Math.hypot(dx, dy) || 1;
-    const hit = rayHit(pts, tip[0], tip[1], dx / len, dy / len, FIN.reach);
-    if (!hit) continue;
-    if (where === 'head') out.unshift(hit); else out.push(hit);
-  }
-  return out;
-}
-
-// Возвращает d-атрибуты линий, отделяющих плавники от тела.
-function finLines(pts) {
-  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
-  const pad = 4, g = FIN.grid;
-  const x0 = Math.min.apply(null, xs) - pad, y0 = Math.min.apply(null, ys) - pad;
-  const w = Math.ceil((Math.max.apply(null, xs) + pad - x0) / g);
-  const h = Math.ceil((Math.max.apply(null, ys) + pad - y0) / g);
-  const toMM = (c) => [x0 + (c[0] + 0.5) * g, y0 + (c[1] + 0.5) * g];
-
-  const inside = new Uint8Array(w * h);
-  const outside = new Uint8Array(w * h);
-  for (let j = 0; j < h; j++) {
-    for (let i = 0; i < w; i++) {
-      const k = j * w + i;
-      inside[k] = pointInPoly(pts, x0 + (i + 0.5) * g, y0 + (j + 0.5) * g) ? 1 : 0;
-      outside[k] = inside[k] ? 0 : 1;
-    }
-  }
-
-  const depth = distanceTo(outside, w, h);      // клетки: как глубоко внутри рыбы
-  let maxDepth = 0;
-  for (let k = 0; k < depth.length; k++) if (inside[k] && depth[k] > maxDepth) maxDepth = depth[k];
-  const R = maxDepth * FIN.bodyPart;
-
-  const core = new Uint8Array(w * h);           // тело без плавников
-  for (let k = 0; k < core.length; k++) core[k] = (inside[k] && depth[k] >= R) ? 1 : 0;
-
-  const back = distanceTo(core, w, h);          // возвращаем срезанную полосу
-  const opened = new Uint8Array(w * h);
-  for (let k = 0; k < opened.length; k++) opened[k] = (inside[k] && back[k] <= R) ? 1 : 0;
-
-  const keep = FIN.keepMM;                      // мм от контура, ближе — не рисуем
-  const lines = [];
-  for (const line of chain(marchingSquares(opened, w, h, toMM), g / 2)) {
-    // Граница «тела» совпадает с контуром рыбы почти везде — оставляем только
-    // куски, ушедшие внутрь: это и есть срезы поперёк плавников.
-    let piece = [];
-    for (const p of line.concat([null])) {
-      if (p && distToPoly(pts, p[0], p[1]) > keep) { piece.push(p); continue; }
-      if (piece.length > 1 && polyLen(piece) >= FIN.minLen) {
-        // Срез должен именно резать: полоска, идущая вдоль контура в
-        // миллиметре от него, — это не основание плавника, а вогнутость тела.
-        const deep = Math.max.apply(null, piece.map((q) => distToPoly(pts, q[0], q[1])));
-        if (deep >= FIN.minDepth) lines.push(extendEnds(simplify(piece, 0.3), pts));
-      }
-      piece = [];
-    }
-  }
-  return lines.map((line) =>
-    line.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(2)} ${p[1].toFixed(2)}`).join(' '));
+function netOf(s) {
+  if (s.shape === 'cube') return cubeNet(s.face, s.tab);
+  if (s.shape === 'sphere') return stripNet(s.strip[0], s.strip[1]);
+  throw new Error('не знаю, как разворачивать ' + s.shape);
 }
 
 // ── SVG ─────────────────────────────────────────────────────────────────────
@@ -432,26 +231,22 @@ function markerSvg(bits, x, y) {
   return out;
 }
 
-// Плавники, лежащие поверх тела: в силуэт они не попадают, их отдельно
-// находит /tools/silhouettes.html (ступенька карты глубины) и складывает
-// в tools/inner-fins.json. Файла нет — просто рисуем без них.
-const INNER_FINS = (() => {
-  try {
-    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, 'inner-fins.json'), 'utf8'));
-    delete raw._;
-    return raw;
-  } catch (e) { return {}; }
-})();
+const pt = (p) => `${p[0].toFixed(2)} ${p[1].toFixed(2)}`;
+const poly = (pts) => pts.map((p, i) => (i ? 'L' : 'M') + pt(p)).join(' ') + ' Z';
+const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
-function buildSvg(fish) {
-  const st = fish.sheetTransform;
-  const X = (z) => (st.ox + st.scale * z).toFixed(2);
-  const Y = (y) => (st.oy - st.scale * y).toFixed(2);
+// Подсказка-мордочка: две точки и улыбка, еле заметные. Ребёнок поймёт,
+// где у фигурки лицо, и закрасит подсказку своим рисунком.
+function faceHint(cx, cy, s) {
+  const e = s * 0.11, r = s * 0.045;
+  return [
+    `<circle cx="${(cx - e).toFixed(2)}" cy="${(cy - e * 0.5).toFixed(2)}" r="${r.toFixed(2)}" fill="none" stroke="${HINT.color}" stroke-width="${HINT.width}"/>`,
+    `<circle cx="${(cx + e).toFixed(2)}" cy="${(cy - e * 0.5).toFixed(2)}" r="${r.toFixed(2)}" fill="none" stroke="${HINT.color}" stroke-width="${HINT.width}"/>`,
+    `<path d="M${(cx - e * 0.9).toFixed(2)} ${(cy + e * 0.5).toFixed(2)} Q${cx.toFixed(2)} ${(cy + e * 1.3).toFixed(2)} ${(cx + e * 0.9).toFixed(2)} ${(cy + e * 0.5).toFixed(2)}" fill="none" stroke="${HINT.color}" stroke-width="${HINT.width}" stroke-linecap="round"/>`
+  ].join('\n  ');
+}
 
-  const pts = fish.contourModel.map((p) => [+X(p[0]), +Y(p[1])]);
-  const d = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(2)} ${p[1].toFixed(2)}`).join(' ') + ' Z';
-
-
+function buildSvg(fish, net) {
   const parts = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${SHEET.w}mm" height="${SHEET.h}mm" viewBox="0 0 ${SHEET.w} ${SHEET.h}">`,
     `  <rect width="${SHEET.w}" height="${SHEET.h}" fill="#fff"/>`
@@ -460,22 +255,43 @@ function buildSvg(fish) {
     const pos = SHEET.markerPositions[corner];
     parts.push('  ' + markerSvg(fish.markers[corner], pos[0], pos[1]));
   }
-  parts.push(
-    `  <path d="${d}" fill="#fff" stroke="${STROKE_COLOR}" stroke-width="${STROKE}" stroke-linejoin="round"/>`
-  );
-  const inner = (INNER_FINS[fish.name] || []).map((line) =>
-    line.map((p, i) => `${i ? 'L' : 'M'}${X(p[0])} ${Y(p[1])}`).join(' '));
 
-  // У робота плавников нет, а лицо уже на модели — рисуем один контур.
-  const decor = fish.view === 'front' ? [] : finLines(pts).concat(inner);
-  for (const line of decor) {
-    parts.push(`  <path d="${line}" fill="none" stroke="${FIN.color}" stroke-width="${FIN.width}" ` +
-               `stroke-dasharray="${FIN.dash}" stroke-linecap="round" stroke-linejoin="round"/>`);
+  // Контур разреза: объединение граней и язычков. Рисуем каждый кусок
+  // отдельно, а общие рёбра перекрываем пунктиром сгиба сверху — так линия
+  // реза остаётся сплошной только там, где действительно режут.
+  const pieces = Object.values(net.faces).map(([x, y, w, h]) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]])
+    .concat(net.tabs);
+  for (const p of pieces) {
+    parts.push(`  <path d="${poly(p)}" fill="#fff" stroke="${CUT.color}" stroke-width="${CUT.width}" stroke-linejoin="round"/>`);
   }
+  // Внутренние рёбра — сгибы: поверх сплошной кладём белую, потом пунктир.
+  for (const [a, b] of net.folds) {
+    parts.push(`  <path d="M${pt(a)} L${pt(b)}" stroke="#fff" stroke-width="${(CUT.width + 0.3).toFixed(2)}"/>`);
+    parts.push(`  <path d="M${pt(a)} L${pt(b)}" stroke="${FOLD.color}" stroke-width="${FOLD.width}" stroke-dasharray="${FOLD.dash}" stroke-linecap="round"/>`);
+  }
+  for (const t of net.tabs) {
+    const cx = (t[0][0] + t[1][0] + t[2][0] + t[3][0]) / 4;
+    const cy = (t[0][1] + t[1][1] + t[2][1] + t[3][1]) / 4;
+    const vertical = Math.abs(t[1][0] - t[0][0]) < Math.abs(t[1][1] - t[0][1]);
+    parts.push(`  <text x="${cx.toFixed(2)}" y="${cy.toFixed(2)}" text-anchor="middle" dominant-baseline="central" ` +
+      `font-family="Segoe UI, sans-serif" font-size="2.6" fill="${FOLD.color}"` +
+      (vertical ? ` transform="rotate(-90 ${cx.toFixed(2)} ${cy.toFixed(2)})"` : '') + `>клей</text>`);
+  }
+
+  if (fish.shape === 'cube') {
+    const f = net.faces.front;
+    parts.push('  ' + faceHint(f[0] + f[2] / 2, f[1] + f[3] / 2, f[2]));
+  } else {
+    const m = net.faces.map;
+    // Экватор: намёк, что полоска — карта, и низ с верхом сойдутся к полюсам.
+    parts.push(`  <path d="M${(m[0] + 2).toFixed(2)} ${(m[1] + m[3] / 2).toFixed(2)} L${(m[0] + m[2] - 2).toFixed(2)} ${(m[1] + m[3] / 2).toFixed(2)}" ` +
+      `stroke="${HINT.color}" stroke-width="${FOLD.width}" stroke-dasharray="${FOLD.dash}"/>`);
+    parts.push('  ' + faceHint(m[0] + m[2] / 2, m[1] + m[3] / 2, m[3] * 0.9));
+  }
+
   parts.push(
-    // Глаз на листе не печатаем: ребёнок рисует свой, где захочет. Координата
-    // всё равно считается и лежит в манифесте — вернуть подсказку легко.
-    `  <text x="${SHEET.w / 2}" y="197" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="7" font-weight="600" fill="#444">${fish.title}</text>`,
+    `  <text x="${SHEET.w / 2}" y="21" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="4.2" fill="#666">${esc(fish.hint)}</text>`,
+    `  <text x="${SHEET.w / 2}" y="197" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="7" font-weight="600" fill="#444">${esc(fish.title)}</text>`,
     '</svg>'
   );
   return parts.join('\n') + '\n';
@@ -483,57 +299,49 @@ function buildSvg(fish) {
 
 // ── сборка ──────────────────────────────────────────────────────────────────
 function main() {
-  const src = path.join(__dirname, 'contours.json');
-  if (!fs.existsSync(src)) {
-    console.error('нет tools/contours.json — сперва выгрузи контуры из /tools/silhouettes.html');
-    process.exit(1);
-  }
-  const contours = JSON.parse(fs.readFileSync(src, 'utf8'));
-
-  const missing = SPECIES.filter((s) => !contours[s.name]).map((s) => s.name);
-  if (missing.length) {
-    console.error('в contours.json нет видов: ' + missing.join(', '));
-    process.exit(1);
-  }
-
   const picked = pickCodes(SPECIES.length * 4);
   const codes = picked.codes;
   const fish = SPECIES.map((s, i) => {
-    const c = contours[s.name];
+    const net = netOf(s);
+    const faces = net.faces;
     const f = {
       id: i + 1,
       name: s.name,
       title: s.title,
-      model: s.model || '/assets/models/pack/' + s.name + '/' + s.name + '.gltf',
+      shape: s.shape,
       svg: 'assets/coloring/' + sheetFile(s.name),
-      view: s.view || 'side',
-      length: s.len,
+      size: s.size,
       markers: {
         tl: bitsOf(codes[i * 4]),
         tr: bitsOf(codes[i * 4 + 1]),
         bl: bitsOf(codes[i * 4 + 2]),
         br: bitsOf(codes[i * 4 + 3])
       },
-      contourModel: c.contour,
-      bboxModel: c.bbox
+      // Что с листа уходит в текстуру: crop — общий габарит граней (мм),
+      // faces — грани внутри него, trim — на сколько мм отступать от края
+      // грани, чтобы в текстуру не попали печатные линии.
+      crop: bboxOf(Object.values(faces)),
+      faces: faces,
+      trim: TRIM_MM,
+      hint: s.hint
     };
-    f.sheetTransform = sheetTransform(c.bbox);
-    if (f.view !== 'front') f.eye = s.eye || eyeAt(c.contour, c.bbox);
+    f._net = net;
     return f;
   });
 
   fs.mkdirSync(OUT, { recursive: true });
-  // старые листы убираем: они были сняты с моделей, которых больше нет в игре
+  // старые листы убираем: виды могли переименоваться или уйти
   for (const old of fs.readdirSync(OUT)) {
     if (old.endsWith('.svg')) fs.unlinkSync(path.join(OUT, old));
   }
 
   for (const f of fish) {
-    fs.writeFileSync(path.join(OUT, sheetFile(f.name)), buildSvg(f), 'utf8');
+    fs.writeFileSync(path.join(OUT, sheetFile(f.name)), buildSvg(f, f._net), 'utf8');
+    delete f._net;
   }
   fs.writeFileSync(
     path.join(OUT, 'manifest.json'),
-    JSON.stringify({ version: 2, sheet: SHEET, fish: fish }, null, 1),
+    JSON.stringify({ version: 3, sheet: SHEET, fish: fish }, null, 1),
     'utf8'
   );
 
@@ -555,9 +363,8 @@ function main() {
   console.log('листов: ' + fish.length);
   console.log('минимальное различие кодов: ' + worst + ' клеток из 16');
   fish.forEach((f) => console.log(
-    '  ' + f.name.padEnd(24) + f.title.padEnd(20) +
-    'масштаб ' + String(f.sheetTransform.scale).padEnd(9) +
-    (f.eye ? 'глаз ' + f.eye.join(', ') : 'с лица')
+    '  ' + f.name.padEnd(12) + f.title.padEnd(12) + f.shape.padEnd(8) +
+    'текстура ' + f.crop[2] + '×' + f.crop[3] + ' мм'
   ));
 }
 

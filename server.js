@@ -20,7 +20,7 @@
 //
 // Общее для всех аквариумов:
 //   POST   /api/tanks {name, password?} — создать → {id, name, created, password}
-//   GET    /api/pack                  — покупные модели рыб [{name, title, url}]
+//   GET    /api/pack                  — покупные фигуры [{name, title, shape}]
 //
 // Внутри аквариума, префикс /api/t/<id>. Помеченные 🔒 требуют заголовок
 // X-Tank-Pass с паролем аквариума:
@@ -68,7 +68,7 @@ const MAX_BODY = 12 * 1024 * 1024;
 const LIMITS = {
   tanks: Number(process.env.AQUA_MAX_TANKS) || 200,          // всего аквариумов
   tanksPerHour: Number(process.env.AQUA_TANKS_PER_HOUR) || 5, // с одного адреса
-  fish: Number(process.env.AQUA_MAX_FISH) || 40,             // рыбок в аквариуме
+  fish: Number(process.env.AQUA_MAX_FISH) || 100,            // фигур в аквариуме
   backgrounds: Number(process.env.AQUA_MAX_BG) || 8,         // своих фонов
   fishBytes: 3 * 1024 * 1024,                                // картинка рыбки
   bgBytes: 6 * 1024 * 1024,                                  // картинка фона
@@ -652,7 +652,7 @@ function handleTankApi(req, res, t, url) {
           id: fid, type: 'pack', model: model.name, title: model.title,
           created: new Date().toISOString()
         }));
-        console.log(`+ робот из пака ${model.name} в ${t.id} — всего ${listFish(t).length}`);
+        console.log(`+ фигура из пака ${model.name} в ${t.id} — всего ${listFish(t).length}`);
         return send(res, 200, JSON.stringify({ ok: true, id: fid }));
       }
 
@@ -660,7 +660,7 @@ function handleTankApi(req, res, t, url) {
         return send(res, 400, '{"error":"нужны kind и texture (dataURL png/jpeg)"}');
       }
       if (tooHeavy(data.texture, LIMITS.fishBytes)) {
-        return send(res, 413, '{"error":"картинка робота слишком тяжёлая"}');
+        return send(res, 413, '{"error":"картинка слишком тяжёлая"}');
       }
       ensureTank(t);
       const png = Buffer.from(data.texture.split(',')[1], 'base64');
@@ -668,7 +668,7 @@ function handleTankApi(req, res, t, url) {
       fs.writeFileSync(path.join(t.fish, fid + '.json'), JSON.stringify({
         id: fid, kind: String(data.kind), created: new Date().toISOString()
       }));
-      console.log(`+ робот ${data.kind} в ${t.id} (${Math.round(png.length / 1024)} КБ) — всего ${listFish(t).length}`);
+      console.log(`+ фигура ${data.kind} в ${t.id} (${Math.round(png.length / 1024)} КБ) — всего ${listFish(t).length}`);
       send(res, 200, JSON.stringify({ ok: true, id: fid }));
     });
   }
@@ -677,7 +677,7 @@ function handleTankApi(req, res, t, url) {
   if (req.method === 'DELETE' && delMatch) {
     if (!authed(req, t, ev)) return denied(res, t, ev);
     const n = trashFish(t, delMatch[1]);
-    if (n) console.log(`- робот ${delMatch[1]} из ${t.id} → в корзину`);
+    if (n) console.log(`- фигура ${delMatch[1]} из ${t.id} → в корзину`);
     return send(res, n ? 200 : 404, JSON.stringify({ ok: !!n }));
   }
 
@@ -685,7 +685,7 @@ function handleTankApi(req, res, t, url) {
     if (!authed(req, t, ev)) return denied(res, t, ev);
     const list = listFish(t);
     list.forEach((f) => trashFish(t, f.id));
-    console.log(`аквариум ${t.id} очищен, ${list.length} роботов → в корзину`);
+    console.log(`аквариум ${t.id} очищен, ${list.length} фигур → в корзину`);
     return send(res, 200, JSON.stringify({ ok: true, removed: list.length }));
   }
 
@@ -762,7 +762,7 @@ function handleTankApi(req, res, t, url) {
 
   if (req.method === 'POST' && url === '/feed') {
     ev.feedAt = Date.now();
-    console.log(`🤖 подзарядка в ${t.id}`);
+    console.log(`⚡ подзарядка в ${t.id}`);
     return send(res, 200, JSON.stringify({ ok: true, feedAt: ev.feedAt }));
   }
 
@@ -918,8 +918,8 @@ function webpTwin(file) {
 
 // Код правим часто, поэтому он перепроверяется всегда — но с ETag перепроверка
 // стоит 304 вместо повторной выкачки. Манифест раскрасок и pack.json — часть
-// кода: страница с новым JS и вчерашним списком видов показывает робота
-// боком. Картинки и модели меняются редко, их держим сутки; всё из data/
+// кода: страница с новым JS и вчерашним списком видов сломает фигуры.
+// Картинки меняются редко, их держим сутки; всё из data/
 // живёт вместе с аквариумом и меняется на ходу.
 function cacheControl(ext, url) {
   if (ext === '.html' || ext === '.js' || ext === '.css' || ext === '.json') return 'no-cache';

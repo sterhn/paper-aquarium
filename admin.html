@@ -7,16 +7,16 @@
 <style>
   :root {
     --ink: #eaf6ff;
-    --muted: #8aa6bd;
-    --card: rgba(9, 24, 40, 0.72);
-    --line: rgba(140, 200, 255, 0.16);
-    --accent: #58d6ff;
+    --muted: #a89bbd;
+    --card: rgba(18, 8, 30, 0.72);
+    --line: rgba(160, 130, 255, 0.16);
+    --accent: #b388ff;
     --danger: #ff6b7a;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0; min-height: 100vh;
-    background: linear-gradient(180deg, #06263f 0%, #04101c 100%);
+    background: linear-gradient(180deg, #12081e 0%, #0a0a14 100%);
     color: var(--ink);
     font: 15px/1.5 "Segoe UI", system-ui, sans-serif;
   }
@@ -24,7 +24,7 @@
     position: sticky; top: 0; z-index: 2;
     display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
     padding: 14px 22px;
-    background: rgba(4, 16, 28, 0.9);
+    background: rgba(10, 6, 18, 0.9);
     border-bottom: 1px solid var(--line);
     backdrop-filter: blur(10px);
   }
@@ -40,7 +40,7 @@
   }
   button:hover, select:hover { background: rgba(88, 214, 255, 0.25); }
   select:disabled { opacity: 0.5; cursor: default; }
-  select option { background: #06263f; color: var(--ink); }
+  select option { background: #12081e; color: var(--ink); }
   button.danger { color: var(--danger); border-color: rgba(255, 107, 122, 0.35); background: rgba(255, 107, 122, 0.08); }
   button.danger:hover { background: rgba(255, 107, 122, 0.2); }
 
@@ -59,7 +59,7 @@
   }
   .card img, .card .ph {
     width: 100%; aspect-ratio: 2 / 1; object-fit: contain;
-    background: #0a2233; display: block;
+    background: #120a20; display: block;
   }
   .card .body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; }
   .card .name { font-weight: 600; }
@@ -104,7 +104,7 @@
     position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px;
     padding: 6px 6px 8px; max-width: 200px;
     font: inherit; text-align: center; cursor: pointer; color: var(--ink);
-    background: rgba(10, 34, 51, .6); border: 1px solid var(--line); border-radius: 12px;
+    background: rgba(18, 10, 32, .6); border: 1px solid var(--line); border-radius: 12px;
     transition: border-color .15s, background .15s, transform .12s;
   }
   .bgitem:hover, .bgadd:hover { border-color: var(--accent); transform: translateY(-2px); }
@@ -120,12 +120,12 @@
   .bgdel {
     position: absolute; top: -6px; right: -6px;
     width: 22px; height: 22px; border-radius: 50%;
-    border: 1px solid var(--line); background: #16202b; color: var(--muted);
+    border: 1px solid var(--line); background: #1a1028; color: var(--muted);
     font-size: 13px; line-height: 1; cursor: pointer; padding: 0;
     display: none; place-content: center;
   }
   .bgitem:hover .bgdel { display: grid; }
-  .bgdel:hover { background: #4a1d24; color: #ff9aa6; border-color: #7a2b36; }
+  .bgdel:hover { background: #3a1d2e; color: #ff9aa6; border-color: #6a2b40; }
 
   .bgadd { border-style: dashed; color: var(--muted); justify-content: center; }
   .bgadd .plus { font-size: 22px; line-height: 1; }
@@ -149,13 +149,13 @@
   .gate {
     position: fixed; inset: 0; z-index: 50;
     display: grid; place-items: center; padding: 20px;
-    background: rgba(3, 12, 22, .88);
+    background: rgba(10, 6, 18, .88);
     backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   }
   .gate[hidden] { display: none; }
   .gatebox {
     width: min(420px, 100%); text-align: center;
-    background: #0b2033; border: 1px solid var(--line);
+    background: #140a24; border: 1px solid var(--line);
     border-radius: 20px; padding: 26px; box-shadow: 0 30px 80px rgba(0,10,20,.6);
   }
   .gatebox h2 { margin: 0 0 8px; font-size: 19px; }
@@ -163,7 +163,7 @@
   .gatebox input {
     width: 100%; margin: 18px 0 0; font: inherit; font-size: 17px; text-align: center;
     letter-spacing: 3px; font-family: ui-monospace, Consolas, monospace;
-    color: var(--ink); background: rgba(4,16,28,.6);
+    color: var(--ink); background: rgba(10,6,18,.6);
     border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
   }
   .gatebox input:focus { outline: none; border-color: var(--accent); }
@@ -228,9 +228,7 @@
 
 <script src="/assets/i18n.js"></script>
 <script src="/vendor/three.min.js"></script>
-<script src="/vendor/GLTFLoader.js"></script>
-<script src="/assets/fish-frame.js"></script>
-<script src="/assets/fish-thumbs.js"></script>
+<script src="/assets/shape.js"></script>
 <script src="/assets/modal.js"></script>
 <script src="/assets/tank.js"></script>
 <script>
@@ -276,7 +274,7 @@
   var meta = { id: Tank.id, name: I18N.t('home.create.value') };
 
   function renderMeta() {
-    document.getElementById('tank-name').textContent = '🤖 ' + meta.name;
+    document.getElementById('tank-name').textContent = '⭐ ' + meta.name;
     document.title = meta.name + ' — ' + I18N.t('adm.title');
   }
   renderMeta();
@@ -392,27 +390,26 @@
 
   function paintCardThumbs() {
     var slots = document.querySelectorAll('#grid [data-thumb]');
-    if (!slots.length) return;
-    FishThumbs.withPack(function (idx) {
-      slots.forEach(function (slot) {
-        var model = idx[slot.dataset.thumb];
-        if (!model) return;
-        FishThumbs.get(model, function (url) {
-          if (!url || !slot.parentNode) return;
-          var img = document.createElement('img');
-          img.src = url;
-          img.alt = '';
-          slot.parentNode.replaceChild(img, slot);
-        });
+    if (!slots.length || !window.Shape) return;
+    slots.forEach(function (slot) {
+      var shape = shapes[slot.dataset.thumb];
+      if (!shape) return;
+      Shape.thumbnail(shape, function (url) {
+        if (!url || !slot.parentNode) return;
+        var img = document.createElement('img');
+        img.src = url;
+        img.alt = '';
+        slot.parentNode.replaceChild(img, slot);
       });
     });
   }
 
-  var titles = {};   // вид → название из манифеста раскрасок
+  var titles = {};
+  var shapes = {};
   fetch('/assets/coloring/manifest.json')
     .then(function (r) { return r.json(); })
     .then(function (m) {
-      m.fish.forEach(function (f) { titles[f.name] = f.title; });
+      m.fish.forEach(function (f) { titles[f.name] = f.title; shapes[f.name] = f.shape; });
       refresh();
     })
     .catch(refresh);

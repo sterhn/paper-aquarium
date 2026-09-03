@@ -1,7 +1,12 @@
 [
  {
-  "name": "robot",
-  "title": "Робот",
-  "url": "/assets/models/pack/robot/textured_mesh.glb"
+  "name": "cube",
+  "title": "Кубик",
+  "shape": "cube"
+ },
+ {
+  "name": "planet",
+  "title": "Планета",
+  "shape": "sphere"
  }
 ]

@@ -1,17 +1,17 @@
 /* Обработка фотографии листа раскраски: поиск угловых меток, определение вида
-   рыбы, выравнивание перспективы, вырезание раскраски по контуру, баланс
-   белого. Чистый JS без зависимостей — работает на телефоне в браузере.
+   фигуры, выравнивание перспективы, вырезание раскраски по crop-прямоугольнику
+   из манифеста v3, баланс белого. Чистый JS без зависимостей.
 
    API: FishCapture.processPhoto(source, manifest) → Promise<{
-     kind, title, texture (dataURL png), preview (dataURL png),
+     kind, title, shape, texture (dataURL png), preview (dataURL png),
      boost (ползунок «Ярче цвета»: auto, value, set(v), texCanvas, pvCanvas, bake())
    }> либо reject(Error) с понятным сообщением. */
 (function () {
   'use strict';
 
-  var WORK_MAX = 1600;      // рабочий размер фото
-  var PX_PER_MM = 5;        // разрешение выровненного листа
-  var TEX_W = 1024;         // ширина итоговой текстуры
+  var WORK_MAX = 1600;
+  var PX_PER_MM = 5;
+  var TEX_W = 1024;
 
   // ── линал ────────────────────────────────────────────────────────────────
   function solve8(M, b) {
@@ -60,7 +60,6 @@
     return lo.slice(0, -1).concat(hi.slice(0, -1));
   }
 
-  // 4 вершины четырёхугольника: пара точек оболочки + самые удалённые от их прямой
   function quadOf(pts) {
     var h = hull(pts);
     if (h.length < 4) return null;
@@ -136,7 +135,6 @@
       var quad = quadOf(pts);
       if (!quad) continue;
 
-      // клетки 6×6: каждую сэмплируем 5 точками, чтобы пережить шум
       var Hq = homography([[0, 0], [6, 0], [6, 6], [0, 6]], quad);
       var samples = [];
       var offs = [[0.5, 0.5], [0.3, 0.3], [0.7, 0.3], [0.3, 0.7], [0.7, 0.7]];
@@ -177,16 +175,6 @@
     return found;
   }
 
-  // ── контур на канвасе ────────────────────────────────────────────────────
-  function contourPath(ctx, fish, toPx) {
-    ctx.beginPath();
-    fish.contourModel.forEach(function (p, i) {
-      var pt = toPx(p);
-      if (i === 0) ctx.moveTo(pt[0], pt[1]); else ctx.lineTo(pt[0], pt[1]);
-    });
-    ctx.closePath();
-  }
-
   // ── главный пайплайн ─────────────────────────────────────────────────────
   function processPhoto(source, manifest) {
     return new Promise(function (resolve, reject) {
@@ -208,7 +196,6 @@
       }
       mean /= W * H;
 
-      // подбираем порог, пока у какого-то вида не найдутся все 4 угла
       var lookup = buildLookup(manifest);
       var byKind = null, kind = null, bestFound = 0;
       var tries = [0.55, 0.45, 0.65, 0.72, 0.38];
@@ -245,7 +232,7 @@
       var order = ['tl', 'tr', 'br', 'bl'];
       var srcPts = order.map(function (c) { return [(mmPos[c][0] + half) * PX_PER_MM, (mmPos[c][1] + half) * PX_PER_MM]; });
       var dstPts = order.map(function (c) { return byKind[c]; });
-      var Hrect = homography(srcPts, dstPts);   // лист(px) → фото(px)
+      var Hrect = homography(srcPts, dstPts);
 
       var SW = Math.round(manifest.sheet.w * PX_PER_MM);
       var SH = Math.round(manifest.sheet.h * PX_PER_MM);
@@ -268,13 +255,9 @@
         }
       }
 
-      // ── баланс белого по бумаге вокруг рыбы ──
-      var st = fish.sheetTransform;
-      var bz = fish.bboxModel.z, by = fish.bboxModel.y;
-      var cropMM = {
-        x0: st.ox + st.scale * bz[0], x1: st.ox + st.scale * bz[1],
-        y0: st.oy - st.scale * by[1], y1: st.oy - st.scale * by[0]
-      };
+      // ── баланс белого по бумаге вокруг фигуры ──
+      var crop = fish.crop;
+      var cropMM = { x0: crop[0], y0: crop[1], x1: crop[0] + crop[2], y1: crop[1] + crop[3] };
       var wr = [0, 0, 0], wn = 0;
       var wa = manifest.sheet.work;
       for (var wy = wa.y0; wy < wa.y1; wy += 3) {
@@ -298,44 +281,29 @@
       }
       sctx.putImageData(simg, 0, 0);
 
-      // ── текстура: кадр по bbox контура, фон — средний цвет раскраски ──
-      var cropW = cropMM.x1 - cropMM.x0, cropH = cropMM.y1 - cropMM.y0;
+      // ── текстура: прямоугольный crop из манифеста ──
+      var cropW = crop[2], cropH = crop[3];
+      var TRIM_MM = fish.trim || 1.8;
       var TH = Math.round(TEX_W * cropH / cropW);
       var tex = document.createElement('canvas');
       tex.width = TEX_W; tex.height = TH;
       var tctx = tex.getContext('2d');
 
-      function mmToTex(p) {   // модельные (z,y) → пиксели текстуры
-        return [
-          (st.ox + st.scale * p[0] - cropMM.x0) / cropW * TEX_W,
-          (st.oy - st.scale * p[1] - cropMM.y0) / cropH * TH
-        ];
-      }
-
-      // Маска раскраски с «выеденной» печатной обводкой: заливка контура минус
-      // штрих вдоль самого контура. Обводка на листе 1.6 мм по центру линии
-      // плюс размытие печати и фото — срезаем по TRIM_MM с каждой стороны.
-      // Контур стал тоньше и светлее, поэтому и полоса уже: у рыбки остаётся
-      // больше детского рисунка по краю.
-      var TRIM_MM = 1.8;
-      var pxPerMMTex = TEX_W / cropW;
-      var maskCv = document.createElement('canvas');
-      maskCv.width = TEX_W; maskCv.height = TH;
-      var mctx = maskCv.getContext('2d');
-      contourPath(mctx, fish, mmToTex);
-      mctx.fillStyle = '#fff';
-      mctx.fill();
-      mctx.globalCompositeOperation = 'destination-out';
-      contourPath(mctx, fish, mmToTex);
-      mctx.lineWidth = TRIM_MM * 2 * pxPerMMTex;
-      mctx.lineJoin = 'round';
-      mctx.lineCap = 'round';
-      mctx.stroke();
-      var mask = mctx.getImageData(0, 0, TEX_W, TH).data;
-
       tctx.drawImage(sheet,
         cropMM.x0 * PX_PER_MM, cropMM.y0 * PX_PER_MM, cropW * PX_PER_MM, cropH * PX_PER_MM,
         0, 0, TEX_W, TH);
+
+      // Прямоугольная маска с вырезанной печатной обводкой по краю:
+      // заливка всего crop минус штрих по периметру шириной TRIM_MM.
+      var pxPerMMTex = TEX_W / cropW;
+      var trimPx = TRIM_MM * pxPerMMTex;
+      var maskCv = document.createElement('canvas');
+      maskCv.width = TEX_W; maskCv.height = TH;
+      var mctx = maskCv.getContext('2d');
+      mctx.fillStyle = '#fff';
+      mctx.fillRect(trimPx, trimPx, TEX_W - trimPx * 2, TH - trimPx * 2);
+      var mask = mctx.getImageData(0, 0, TEX_W, TH).data;
+
       var img = tctx.getImageData(0, 0, TEX_W, TH);
       var d = img.data;
       var N = TEX_W * TH;
@@ -350,24 +318,23 @@
       }
       var avg = an ? [ar[0] / an | 0, ar[1] / an | 0, ar[2] / an | 0] : [220, 214, 200];
 
-      // Цвета раскраски вытягиваем наружу за срезанный край: волна дилатации —
-      // на краях рыбки продолжается детский рисунок, а не чёрная кайма.
-      var passes = Math.ceil(TRIM_MM * pxPerMMTex) + 6;
+      // Цвета раскраски вытягиваем наружу за срезанный край: волна дилатации
+      var passes = Math.ceil(trimPx) + 6;
       for (var p = 0; p < passes; p++) {
         var next = new Uint8Array(filled);
         var changed = false;
-        for (var y = 0; y < TH; y++) {
-          for (var x = 0; x < TEX_W; x++) {
-            var i = y * TEX_W + x;
-            if (filled[i]) continue;
+        for (var y2 = 0; y2 < TH; y2++) {
+          for (var x2 = 0; x2 < TEX_W; x2++) {
+            var idx = y2 * TEX_W + x2;
+            if (filled[idx]) continue;
             var sr = 0, sg = 0, sb = 0, c = 0;
-            if (x > 0 && filled[i - 1]) { sr += d[(i - 1) * 4]; sg += d[(i - 1) * 4 + 1]; sb += d[(i - 1) * 4 + 2]; c++; }
-            if (x < TEX_W - 1 && filled[i + 1]) { sr += d[(i + 1) * 4]; sg += d[(i + 1) * 4 + 1]; sb += d[(i + 1) * 4 + 2]; c++; }
-            if (y > 0 && filled[i - TEX_W]) { sr += d[(i - TEX_W) * 4]; sg += d[(i - TEX_W) * 4 + 1]; sb += d[(i - TEX_W) * 4 + 2]; c++; }
-            if (y < TH - 1 && filled[i + TEX_W]) { sr += d[(i + TEX_W) * 4]; sg += d[(i + TEX_W) * 4 + 1]; sb += d[(i + TEX_W) * 4 + 2]; c++; }
+            if (x2 > 0 && filled[idx - 1]) { sr += d[(idx - 1) * 4]; sg += d[(idx - 1) * 4 + 1]; sb += d[(idx - 1) * 4 + 2]; c++; }
+            if (x2 < TEX_W - 1 && filled[idx + 1]) { sr += d[(idx + 1) * 4]; sg += d[(idx + 1) * 4 + 1]; sb += d[(idx + 1) * 4 + 2]; c++; }
+            if (y2 > 0 && filled[idx - TEX_W]) { sr += d[(idx - TEX_W) * 4]; sg += d[(idx - TEX_W) * 4 + 1]; sb += d[(idx - TEX_W) * 4 + 2]; c++; }
+            if (y2 < TH - 1 && filled[idx + TEX_W]) { sr += d[(idx + TEX_W) * 4]; sg += d[(idx + TEX_W) * 4 + 1]; sb += d[(idx + TEX_W) * 4 + 2]; c++; }
             if (c) {
-              d[i * 4] = sr / c; d[i * 4 + 1] = sg / c; d[i * 4 + 2] = sb / c;
-              next[i] = 1;
+              d[idx * 4] = sr / c; d[idx * 4 + 1] = sg / c; d[idx * 4 + 2] = sb / c;
+              next[idx] = 1;
               changed = true;
             }
           }
@@ -381,12 +348,6 @@
       tctx.putImageData(img, 0, 0);
 
       // ── «Ярче цвета» ──
-      // Светлый карандаш на рыбке почти не виден. Голая яркость не лечит:
-      // темнеет и бумага между штрихами, рисунок серее, а не сочнее. Поэтому
-      // усиливаем «чернила» (255−c растягивается — белая бумага на месте)
-      // и следом насыщенность вокруг собственной яркости пикселя.
-      // Сырые пиксели держим отдельно: ползунок всегда крутит оригинал,
-      // а не результат прошлого положения.
       var raw = new Uint8ClampedArray(d);
 
       function boostPixels(v) {
@@ -402,16 +363,12 @@
           if (gr < 0) gr = 0;
           if (b < 0) b = 0;
           var l = r * 0.299 + gr * 0.587 + b * 0.114;
-          d[o2] = l + (r - l) * s;          // Uint8Clamped сам режет 0..255
+          d[o2] = l + (r - l) * s;
           d[o2 + 1] = l + (gr - l) * s;
           d[o2 + 2] = l + (b - l) * s;
         }
       }
 
-      // Авто-положение: меряем силу штриха (80-й перцентиль темноты) внутри
-      // контура. Фломастер и так сочный — ноль; светлый карандаш — ощутимый
-      // буст. Почти пустой лист не трогаем: усиливать там нечего, а шум
-      // бумаги проступил бы пятнами.
       var inks = [];
       for (var mi = 0; mi < N; mi += 7) {
         if (mask[mi * 4 + 3] > 128) {
@@ -422,29 +379,15 @@
       var p80 = inks.length ? inks[(inks.length * 0.8) | 0] : 0;
       var auto = p80 < 10 ? 0 : Math.max(0, Math.min(0.8, (115 - p80) / 115));
 
-      // ── превью для телефона: рыбка на тёмном фоне ──
+      // ── превью: прямоугольник на тёмном фоне ──
       var PV_W = 640, PV_H = Math.round(PV_W * cropH / cropW);
       var pv = document.createElement('canvas');
       pv.width = PV_W; pv.height = PV_H;
       var pvctx = pv.getContext('2d');
-      function mmToPv(p) {
-        return [
-          (st.ox + st.scale * p[0] - cropMM.x0) / cropW * PV_W,
-          (st.oy - st.scale * p[1] - cropMM.y0) / cropH * PV_H
-        ];
-      }
       function drawPreview() {
-        pvctx.fillStyle = '#0a2233';
+        pvctx.fillStyle = '#0a1628';
         pvctx.fillRect(0, 0, PV_W, PV_H);
-        pvctx.save();
-        contourPath(pvctx, fish, mmToPv);
-        pvctx.clip();
         pvctx.drawImage(tex, 0, 0, PV_W, PV_H);
-        pvctx.restore();
-        contourPath(pvctx, fish, mmToPv);
-        pvctx.strokeStyle = 'rgba(255,255,255,.85)';
-        pvctx.lineWidth = 3;
-        pvctx.stroke();
       }
 
       var boost = {
@@ -458,8 +401,6 @@
           tctx.putImageData(img, 0, 0);
           drawPreview();
         },
-        // dataURL — только по требованию: на каждое движение ползунка PNG
-        // кодировать дорого, а нужен он один раз, при отправке в аквариум
         bake: function () {
           return { texture: tex.toDataURL('image/png'), preview: pv.toDataURL('image/png') };
         }
@@ -469,6 +410,7 @@
       resolve({
         kind: kind,
         title: fish.title,
+        shape: fish.shape,
         texture: tex.toDataURL('image/png'),
         preview: pv.toDataURL('image/png'),
         boost: boost
