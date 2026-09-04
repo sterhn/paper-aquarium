@@ -908,7 +908,13 @@
     ren.querySelector('.pen').hidden = true;
   }
 
-  function tankLink() { return location.origin + Tank.url; }
+  var lanOrigin = location.origin;
+  if (/^https?:\/\/(localhost|127\.)/.test(location.origin)) {
+    fetch('/api/lan').then(function (r) { return r.json(); }).then(function (d) {
+      if (d.origin) lanOrigin = d.origin;
+    }).catch(function () {});
+  }
+  function tankLink() { return lanOrigin + Tank.url; }
 
   function copyLink(done) {
     var manual = function () {

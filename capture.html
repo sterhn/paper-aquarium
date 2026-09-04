@@ -256,13 +256,22 @@
   // тупик: камера у человека в кармане. Показываем мост: QR прямо на эту
   // страницу, телефон наводится и снимает там.
   if (!matchMedia('(pointer: coarse)').matches && window.qrcode) {
-    try {
-      var qr = qrcode(0, 'M');
-      qr.addData(location.origin + Tank.url + '/capture');
-      qr.make();
-      document.getElementById('cap-qr').innerHTML = qr.createSvgTag(4, 0);
-      document.getElementById('qrrow').hidden = false;
-    } catch (e) { /* без QR кнопка выбора файла всё равно работает */ }
+    function showCapQr(origin) {
+      try {
+        var qr = qrcode(0, 'M');
+        qr.addData(origin + Tank.url + '/capture');
+        qr.make();
+        document.getElementById('cap-qr').innerHTML = qr.createSvgTag(4, 0);
+        document.getElementById('qrrow').hidden = false;
+      } catch (e) { /* без QR кнопка выбора файла всё равно работает */ }
+    }
+    if (/^https?:\/\/(localhost|127\.)/.test(location.origin)) {
+      fetch('/api/lan').then(function (r) { return r.json(); }).then(function (d) {
+        showCapQr(d.origin || location.origin);
+      }).catch(function () { showCapQr(location.origin); });
+    } else {
+      showCapQr(location.origin);
+    }
   }
 
   var inFrame = EMBED && window.parent !== window;

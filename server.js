@@ -787,6 +787,19 @@ function handleApi(req, res, url) {
     return send(res, 200, JSON.stringify(listPack()));
   }
 
+  if (req.method === 'GET' && url === '/api/lan') {
+    const nets = os.networkInterfaces();
+    const ips = [];
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name]) {
+        if (net.family === 'IPv4' && !net.internal) ips.push(net.address);
+      }
+    }
+    const ip = ips[0] || null;
+    const origin = ip ? `http://${ip}:${PORT}` : null;
+    return send(res, 200, JSON.stringify({ ip, origin }));
+  }
+
   // Обмен пина на код аквариума. Перебор душится той же растущей паузой,
   // что и пароль: комбинаций всего девяносто тысяч, без паузы их перебрали
   // бы за вечер. Пауза по адресу: аквариум по пину ещё неизвестен.
