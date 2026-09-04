@@ -180,12 +180,15 @@
         ctx.fillStyle = colors[i];
         ctx.fillRect(p[0] * f, p[1] * f, f, f);
       }
+      drawFace(ctx, 1 * f, 1 * f, f, f);
     } else if (shape === 'star') {
       ctx.fillStyle = '#fde68a';
       ctx.fillRect(0, 0, w, h);
+      drawFace(ctx, w * 0.25, 0, w * 0.5, h);
     } else {
       ctx.fillStyle = '#c4b5fd';
       ctx.fillRect(0, 0, w, h);
+      drawFace(ctx, w * 0.25, 0, w * 0.5, h);
     }
 
     var tex = new THREE.CanvasTexture(c);
@@ -193,6 +196,32 @@
     return tex;
   }
 
+  function drawFace(ctx, x, y, w, h) {
+    var cx = x + w / 2, cy = y + h * 0.45;
+    var eyeR = Math.min(w, h) * 0.06;
+    var gap = w * 0.15;
+    ctx.fillStyle = '#1a1a2e';
+    ctx.beginPath();
+    ctx.arc(cx - gap, cy, eyeR, 0, Math.PI * 2);
+    ctx.arc(cx + gap, cy, eyeR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(cx - gap + eyeR * 0.35, cy - eyeR * 0.35, eyeR * 0.4, 0, Math.PI * 2);
+    ctx.arc(cx + gap + eyeR * 0.35, cy - eyeR * 0.35, eyeR * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,150,150,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(cx - gap - w * 0.06, cy + h * 0.08, eyeR * 1.5, eyeR * 0.8, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx + gap + w * 0.06, cy + h * 0.08, eyeR * 1.5, eyeR * 0.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#1a1a2e';
+    ctx.lineWidth = Math.max(1.5, eyeR * 0.4);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(cx, cy + h * 0.06, gap * 0.5, 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.stroke();
+  }
 
   // ── UV из манифеста ────────────────────────────────────────────────────────
   // Манифест хранит faces в мм на листе; нам нужны UV в 0..1 относительно
