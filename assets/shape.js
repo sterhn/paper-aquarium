@@ -79,7 +79,7 @@
         var nz = Math.sin(phi) * Math.cos(theta);
         positions.push(nx * radius, ny * radius, nz * radius);
         normals.push(nx, ny, nz);
-        uvs.push(u0 + u * (u1 - u0), v0 + v * (v1 - v0));
+        uvs.push(u0 + u * (u1 - u0), v1 - v * (v1 - v0));
       }
     }
     for (var iy = 0; iy < seg; iy++) {
@@ -176,9 +176,9 @@
       var r = fish.faces[n];
       uvs[n] = [
         (r[0] - cx) / cw,
-        (r[1] - cy) / ch,
+        1 - (r[1] - cy + r[3]) / ch,
         (r[0] - cx + r[2]) / cw,
-        (r[1] - cy + r[3]) / ch
+        1 - (r[1] - cy) / ch
       ];
     }
     return uvs;
@@ -194,12 +194,12 @@
     });
     var geo;
     if (shape === 'cube') {
-      // Полная UV = вся текстура, если нет раздельных граней
-      var defaultFace = [0, 0, 1, 1];
-      var faceUVs = {
-        left: defaultFace, front: defaultFace, right: defaultFace,
-        back: defaultFace, top: defaultFace, bottom: defaultFace
-      };
+      var faceUVs = tex
+        ? { left:[0,0,1,1], front:[0,0,1,1], right:[0,0,1,1],
+            back:[0,0,1,1], top:[0,0,1,1], bottom:[0,0,1,1] }
+        : { left:[0,0.5,0.25,0.75], front:[0.25,0.5,0.5,0.75],
+            right:[0.5,0.5,0.75,0.75], back:[0.75,0.5,1,0.75],
+            top:[0.25,0.75,0.5,1], bottom:[0.25,0.25,0.5,0.5] };
       geo = cubeGeo(size, faceUVs);
     } else {
       geo = planetGeo(size, null);
