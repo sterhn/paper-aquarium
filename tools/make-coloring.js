@@ -255,16 +255,6 @@ const pt = (p) => `${p[0].toFixed(2)} ${p[1].toFixed(2)}`;
 const poly = (pts) => pts.map((p, i) => (i ? 'L' : 'M') + pt(p)).join(' ') + ' Z';
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
-// Подсказка-мордочка: две точки и улыбка, еле заметные. Ребёнок поймёт,
-// где у фигурки лицо, и закрасит подсказку своим рисунком.
-function faceHint(cx, cy, s) {
-  const e = s * 0.11, r = s * 0.045;
-  return [
-    `<circle cx="${(cx - e).toFixed(2)}" cy="${(cy - e * 0.5).toFixed(2)}" r="${r.toFixed(2)}" fill="none" stroke="${HINT.color}" stroke-width="${HINT.width}"/>`,
-    `<circle cx="${(cx + e).toFixed(2)}" cy="${(cy - e * 0.5).toFixed(2)}" r="${r.toFixed(2)}" fill="none" stroke="${HINT.color}" stroke-width="${HINT.width}"/>`,
-    `<path d="M${(cx - e * 0.9).toFixed(2)} ${(cy + e * 0.5).toFixed(2)} Q${cx.toFixed(2)} ${(cy + e * 1.3).toFixed(2)} ${(cx + e * 0.9).toFixed(2)} ${(cy + e * 0.5).toFixed(2)}" fill="none" stroke="${HINT.color}" stroke-width="${HINT.width}" stroke-linecap="round"/>`
-  ].join('\n  ');
-}
 
 function buildSvg(fish, net) {
   const parts = [

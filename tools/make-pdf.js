@@ -90,6 +90,7 @@ function serve() {
         execFile(chrome, [
           '--headless',
           '--disable-gpu',
+          '--no-sandbox',
           '--no-first-run',
           '--user-data-dir=' + profile,
           '--no-pdf-header-footer',
