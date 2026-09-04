@@ -8,5 +8,10 @@
   "name": "planet",
   "title": "Планета",
   "shape": "sphere"
+ },
+ {
+  "name": "star",
+  "title": "Звезда",
+  "shape": "star"
  }
 ]

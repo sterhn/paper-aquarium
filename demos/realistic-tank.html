@@ -387,7 +387,7 @@
   function Figure(spec) {
     this.kind = spec.name;
     this.shape = spec.shape || 'cube';
-    var baseSize = spec.size || 1.7;
+    var baseSize = spec.size || 1.0;
     var size = baseSize * (0.82 + Math.random() * 0.36);
     this.radius = size * 0.5;
 
@@ -1141,7 +1141,7 @@
       Shape.thumbnail(item.shape, function (url) {
         var slot = b.querySelector('.ph');
         if (!slot) return;
-        if (!url) { slot.textContent = item.shape === 'cube' ? '▢' : '○'; return; }
+        if (!url) { slot.textContent = item.shape === 'cube' ? '▢' : item.shape === 'star' ? '★' : '○'; return; }
         var img = document.createElement('img');
         img.src = url;
         img.alt = '';

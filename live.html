@@ -155,7 +155,7 @@
 
   // ── constants ─────────────────────────────────────────────────────────
   var MAX_FIGURES = 100;
-  var SHAPES = ['cube', 'sphere'];
+  var SHAPES = ['cube', 'sphere', 'star'];
 
   var Z_NEAR = 6, Z_FAR = -18, FLOOR = 0;
   var MARGIN = 1.6, FLOOR_ROOM = 0.9;
@@ -195,7 +195,7 @@
   // ── Figure class ──────────────────────────────────────────────────────
   function Figure(shape) {
     this.shape = shape || SHAPES[Math.floor(Math.random() * SHAPES.length)];
-    var size = 1.4 + Math.random() * 0.6;
+    var size = 0.9 + Math.random() * 0.5;
     var spawned = Shape.spawn(this.shape, size, null);
     this.group = spawned.group;
     this.mesh = spawned.mesh;

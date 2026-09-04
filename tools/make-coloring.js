@@ -47,8 +47,8 @@ const SHEET = {
 // съёмки оставалась бы каймой. Внутрь грани попадает только пунктир по
 // краю, и его capture/shape.js срезают: грань читается с отступом TRIM_MM.
 const CUT = { color: '#8a8a8a', width: 0.6 };
-const FOLD = { color: '#b8b8b8', width: 0.5, dash: '2.2 1.8' };
-const HINT = { color: '#d6d6d6', width: 0.7 };   // подсказки внутри граней
+const FOLD = { color: '#d6d6d6', width: 0.35, dash: '1.8 2.2' };
+const HINT = { color: '#e0e0e0', width: 0.5 };
 const TRIM_MM = 1.8;
 
 // ── виды ────────────────────────────────────────────────────────────────────
@@ -56,10 +56,12 @@ const TRIM_MM = 1.8;
 // ребёнок, shape — что строит сцена, size — размер фигурки в аквариуме
 // (единицы сцены; аквариум примерно 24 × 13 × 24).
 const SPECIES = [
-  { name: 'cube', title: 'Кубик', shape: 'cube', size: 1.7,
+  { name: 'cube', title: 'Кубик', shape: 'cube', size: 1.0,
     face: 45, tab: 6, hint: 'Вырежи по сплошной линии, согни по пунктиру, склей за язычки — и кубик готов' },
-  { name: 'planet', title: 'Планета', shape: 'sphere', size: 1.9,
-    strip: [200, 100], hint: 'Раскрась полоску — она обернётся вокруг планеты. Левый и правый край сойдутся' }
+  { name: 'planet', title: 'Планета', shape: 'sphere', size: 1.1,
+    strip: [200, 100], hint: 'Раскрась полоску — она обернётся вокруг планеты. Левый и правый край сойдутся' },
+  { name: 'star', title: 'Звезда', shape: 'star', size: 1.1,
+    star: true, hint: 'Раскрась звезду — она оживёт в аквариуме' }
 ];
 
 function sheetFile(name) { return name + '.svg'; }
@@ -210,9 +212,27 @@ function stripNet(w, h) {
   return { faces: { map: rect(x, y, w, h) }, tabs: [], folds: [] };
 }
 
+// Звезда: flat outline — just the bounding box as the "map" face.
+function starNet() {
+  const pts = 5, outerR = 65, innerR = outerR * 0.42;
+  const cx = SHEET.w / 2, cy = (SHEET.work.y0 + SHEET.work.y1) / 2;
+  const outline = [];
+  for (let i = 0; i < pts * 2; i++) {
+    const ang = (i * Math.PI) / pts - Math.PI / 2;
+    const rad = i % 2 === 0 ? outerR : innerR;
+    outline.push([cx + Math.cos(ang) * rad, cy + Math.sin(ang) * rad]);
+  }
+  const x0 = Math.min(...outline.map(p => p[0]));
+  const y0 = Math.min(...outline.map(p => p[1]));
+  const x1 = Math.max(...outline.map(p => p[0]));
+  const y1 = Math.max(...outline.map(p => p[1]));
+  return { faces: { map: rect(x0, y0, x1 - x0, y1 - y0) }, tabs: [], folds: [], outline };
+}
+
 function netOf(s) {
   if (s.shape === 'cube') return cubeNet(s.face, s.tab);
   if (s.shape === 'sphere') return stripNet(s.strip[0], s.strip[1]);
+  if (s.shape === 'star') return starNet();
   throw new Error('не знаю, как разворачивать ' + s.shape);
 }
 
@@ -278,15 +298,13 @@ function buildSvg(fish, net) {
       (vertical ? ` transform="rotate(-90 ${cx.toFixed(2)} ${cy.toFixed(2)})"` : '') + `>клей</text>`);
   }
 
-  if (fish.shape === 'cube') {
-    const f = net.faces.front;
-    parts.push('  ' + faceHint(f[0] + f[2] / 2, f[1] + f[3] / 2, f[2]));
-  } else {
+  if (fish.shape === 'sphere') {
     const m = net.faces.map;
-    // Экватор: намёк, что полоска — карта, и низ с верхом сойдутся к полюсам.
     parts.push(`  <path d="M${(m[0] + 2).toFixed(2)} ${(m[1] + m[3] / 2).toFixed(2)} L${(m[0] + m[2] - 2).toFixed(2)} ${(m[1] + m[3] / 2).toFixed(2)}" ` +
       `stroke="${HINT.color}" stroke-width="${FOLD.width}" stroke-dasharray="${FOLD.dash}"/>`);
-    parts.push('  ' + faceHint(m[0] + m[2] / 2, m[1] + m[3] / 2, m[3] * 0.9));
+  }
+  if (net.outline) {
+    parts.push(`  <path d="${poly(net.outline)}" fill="#fff" stroke="${CUT.color}" stroke-width="${CUT.width}" stroke-linejoin="round"/>`);
   }
 
   parts.push(

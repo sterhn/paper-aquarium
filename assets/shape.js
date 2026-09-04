@@ -98,9 +98,73 @@
     return geo;
   }
 
+  // ── звезда ─────────────────────────────────────────────────────────────────
+  // Толстая 5-конечная звезда. UV: equirectangular strip, как у планеты.
+  function starGeo(size, stripUV) {
+    var pts = 5, outerR = size / 2, innerR = outerR * 0.42, depth = outerR * 0.38;
+    var uv = (stripUV && stripUV.map) || [0, 0, 1, 1];
+    var u0 = uv[0], v0 = uv[1], u1 = uv[2], v1 = uv[3];
+    var positions = [], normals = [], uvs = [], indices = [];
+    var outline = [];
+    for (var i = 0; i < pts * 2; i++) {
+      var ang = (i * Math.PI) / pts - Math.PI / 2;
+      var rad = i % 2 === 0 ? outerR : innerR;
+      outline.push([Math.cos(ang) * rad, Math.sin(ang) * rad]);
+    }
+    var n = outline.length;
+    var vi = 0;
+    for (var face = 0; face < 2; face++) {
+      var nz = face === 0 ? 1 : -1;
+      var z = face === 0 ? depth / 2 : -depth / 2;
+      var center = vi;
+      positions.push(0, 0, z); normals.push(0, 0, nz);
+      uvs.push(u0 + (u1 - u0) * 0.5, v0 + (v1 - v0) * 0.5);
+      vi++;
+      for (var j = 0; j < n; j++) {
+        var p = outline[j];
+        positions.push(p[0], p[1], z); normals.push(0, 0, nz);
+        var uu = 0.5 + p[0] / (outerR * 2);
+        var vv = 0.5 + p[1] / (outerR * 2);
+        uvs.push(u0 + uu * (u1 - u0), v0 + vv * (v1 - v0));
+        vi++;
+      }
+      for (var j = 0; j < n; j++) {
+        var a = center, b = center + 1 + j, c = center + 1 + (j + 1) % n;
+        if (face === 0) indices.push(a, b, c);
+        else indices.push(a, c, b);
+      }
+    }
+    for (var j = 0; j < n; j++) {
+      var j2 = (j + 1) % n;
+      var p0 = outline[j], p1 = outline[j2];
+      var dx = p1[0] - p0[0], dy = p1[1] - p0[1];
+      var len = Math.sqrt(dx * dx + dy * dy);
+      var nx = dy / len, ny = -dx / len;
+      var base = vi;
+      positions.push(p0[0], p0[1], depth / 2); normals.push(nx, ny, 0);
+      positions.push(p1[0], p1[1], depth / 2); normals.push(nx, ny, 0);
+      positions.push(p1[0], p1[1], -depth / 2); normals.push(nx, ny, 0);
+      positions.push(p0[0], p0[1], -depth / 2); normals.push(nx, ny, 0);
+      var eu = j / n, eu2 = (j + 1) / n;
+      uvs.push(u0 + eu * (u1 - u0), v1);
+      uvs.push(u0 + eu2 * (u1 - u0), v1);
+      uvs.push(u0 + eu2 * (u1 - u0), v0);
+      uvs.push(u0 + eu * (u1 - u0), v0);
+      indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      vi += 4;
+    }
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    geo.computeBoundingSphere();
+    return geo;
+  }
+
   // ── текстура по умолчанию (кавайная мордочка) ─────────────────────────────
   function defaultTexture(shape) {
-    var w = 512, h = shape === 'sphere' ? 256 : 512;
+    var w = 512, h = (shape === 'sphere' || shape === 'star') ? 256 : 512;
     var c = document.createElement('canvas');
     c.width = w; c.height = h;
     var ctx = c.getContext('2d');
@@ -119,6 +183,10 @@
       // Кавайная мордочка на front
       var fx = 1 * f, fy = 1 * f;
       drawKawaiiface(ctx, fx, fy, f, f);
+    } else if (shape === 'star') {
+      ctx.fillStyle = '#fde68a';
+      ctx.fillRect(0, 0, w, h);
+      drawKawaiiface(ctx, w * 0.25, 0, w * 0.5, h);
     } else {
       ctx.fillStyle = '#c4b5fd';
       ctx.fillRect(0, 0, w, h);
@@ -201,6 +269,8 @@
             right:[0.5,0.5,0.75,0.75], back:[0.75,0.5,1,0.75],
             top:[0.25,0.75,0.5,1], bottom:[0.25,0.25,0.5,0.5] };
       geo = cubeGeo(size, faceUVs);
+    } else if (shape === 'star') {
+      geo = starGeo(size, null);
     } else {
       geo = planetGeo(size, null);
     }
@@ -216,6 +286,9 @@
     if (fish.shape === 'cube') {
       var uvs = faceUVsFromManifest(fish);
       return cubeGeo(size, uvs);
+    } else if (fish.shape === 'star') {
+      var stripUV = faceUVsFromManifest(fish);
+      return starGeo(size, stripUV);
     } else {
       var stripUV = faceUVsFromManifest(fish);
       return planetGeo(size, stripUV);
@@ -246,10 +319,12 @@
     scene.add(s.group);
     if (shape === 'cube') {
       s.group.rotation.set(0.4, 0.6, 0.1);
+    } else if (shape === 'star') {
+      s.group.rotation.set(0.15, 0.3, 0.1);
     }
 
     var camera = new THREE.PerspectiveCamera(35, 232 / 148, 0.1, 100);
-    camera.position.set(0, 0, shape === 'cube' ? 3.2 : 3.6);
+    camera.position.set(0, 0, shape === 'cube' ? 3.2 : shape === 'star' ? 3.0 : 3.6);
     camera.lookAt(0, 0, 0);
 
     thumbRenderer.render(scene, camera);
@@ -266,6 +341,7 @@
   window.Shape = {
     cube: cubeGeo,
     planet: planetGeo,
+    star: starGeo,
     defaultTexture: defaultTexture,
     faceUVsFromManifest: faceUVsFromManifest,
     spawn: spawn,
