@@ -162,9 +162,73 @@
     return geo;
   }
 
+  // ── рыба ────────────────────────────────────────────────────────────────────
+  // Толстый силуэт, аналогично звезде. Outline — нормализованные точки 0..1.
+  function fishGeo(size, outline, stripUV) {
+    var uv = (stripUV && stripUV.map) || [0, 0, 1, 1];
+    var u0 = uv[0], v0 = uv[1], u1 = uv[2], v1 = uv[3];
+    var halfW = size * 0.5, depth = size * 0.25;
+    var positions = [], normals = [], uvs = [], indices = [];
+    var pts = outline.map(function (p) {
+      return [(p[0] - 0.5) * halfW * 2, (p[1] - 0.5) * halfW * 2 / (outline._aspect || 1)];
+    });
+    var n = pts.length;
+    var vi = 0;
+    var cx = 0, cy = 0;
+    for (var k = 0; k < n; k++) { cx += pts[k][0]; cy += pts[k][1]; }
+    cx /= n; cy /= n;
+    for (var face = 0; face < 2; face++) {
+      var nz = face === 0 ? 1 : -1;
+      var z = face === 0 ? depth / 2 : -depth / 2;
+      var center = vi;
+      positions.push(cx, cy, z); normals.push(0, 0, nz);
+      uvs.push(u0 + (u1 - u0) * 0.5, v0 + (v1 - v0) * 0.5);
+      vi++;
+      for (var j = 0; j < n; j++) {
+        var p = pts[j];
+        positions.push(p[0], p[1], z); normals.push(0, 0, nz);
+        var uu = (p[0] / halfW + 1) * 0.5;
+        var vv = (p[1] / halfW + 1) * 0.5;
+        uvs.push(u0 + uu * (u1 - u0), v0 + vv * (v1 - v0));
+        vi++;
+      }
+      for (var j = 0; j < n; j++) {
+        var a = center, b = center + 1 + j, c = center + 1 + (j + 1) % n;
+        if (face === 0) indices.push(a, b, c);
+        else indices.push(a, c, b);
+      }
+    }
+    for (var j = 0; j < n; j++) {
+      var j2 = (j + 1) % n;
+      var p0 = pts[j], p1 = pts[j2];
+      var dx = p1[0] - p0[0], dy = p1[1] - p0[1];
+      var len = Math.sqrt(dx * dx + dy * dy) || 1;
+      var nx = dy / len, ny = -dx / len;
+      var base = vi;
+      positions.push(p0[0], p0[1], depth / 2); normals.push(nx, ny, 0);
+      positions.push(p1[0], p1[1], depth / 2); normals.push(nx, ny, 0);
+      positions.push(p1[0], p1[1], -depth / 2); normals.push(nx, ny, 0);
+      positions.push(p0[0], p0[1], -depth / 2); normals.push(nx, ny, 0);
+      var eu = j / n, eu2 = (j + 1) / n;
+      uvs.push(u0 + eu * (u1 - u0), v1);
+      uvs.push(u0 + eu2 * (u1 - u0), v1);
+      uvs.push(u0 + eu2 * (u1 - u0), v0);
+      uvs.push(u0 + eu * (u1 - u0), v0);
+      indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      vi += 4;
+    }
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    geo.computeBoundingSphere();
+    return geo;
+  }
+
   // ── текстура по умолчанию ──────────────────────────────────────────────────
   function defaultTexture(shape) {
-    var w = 512, h = (shape === 'sphere' || shape === 'star') ? 256 : 512;
+    var w = 512, h = (shape === 'sphere' || shape === 'star' || shape === 'fish') ? 256 : 512;
     var c = document.createElement('canvas');
     c.width = w; c.height = h;
     var ctx = c.getContext('2d');
@@ -185,6 +249,10 @@
       ctx.fillStyle = '#fde68a';
       ctx.fillRect(0, 0, w, h);
       drawFace(ctx, w * 0.25, 0, w * 0.5, h);
+    } else if (shape === 'fish') {
+      ctx.fillStyle = '#93c5fd';
+      ctx.fillRect(0, 0, w, h);
+      drawFace(ctx, w * 0.25, h * 0.1, w * 0.5, h * 0.8);
     } else {
       ctx.fillStyle = '#c4b5fd';
       ctx.fillRect(0, 0, w, h);
@@ -245,7 +313,13 @@
   }
 
   // ── spawn: фигура для сцены ────────────────────────────────────────────────
-  function spawn(shape, size, tex) {
+  var DEFAULT_FISH_OUTLINE = [
+    [0,0.5],[0.15,0.2],[0.3,0.05],[0.5,0],[0.7,0.05],[0.85,0.2],
+    [1,0.35],[0.95,0.55],[0.85,0.75],[0.7,0.9],[0.5,1],[0.3,0.95],
+    [0.15,0.8]
+  ];
+
+  function spawn(shape, size, tex, outline) {
     var mat = new THREE.MeshStandardMaterial({
       map: tex || defaultTexture(shape),
       roughness: 0.45,
@@ -263,6 +337,8 @@
       geo = cubeGeo(size, faceUVs);
     } else if (shape === 'star') {
       geo = starGeo(size, null);
+    } else if (shape === 'fish') {
+      geo = fishGeo(size, outline || DEFAULT_FISH_OUTLINE, null);
     } else {
       geo = planetGeo(size, null);
     }
@@ -281,6 +357,9 @@
     } else if (fish.shape === 'star') {
       var stripUV = faceUVsFromManifest(fish);
       return starGeo(size, stripUV);
+    } else if (fish.shape === 'fish') {
+      var stripUV = faceUVsFromManifest(fish);
+      return fishGeo(size, fish.outline || DEFAULT_FISH_OUTLINE, stripUV);
     } else {
       var stripUV = faceUVsFromManifest(fish);
       return planetGeo(size, stripUV);
@@ -313,10 +392,12 @@
       s.group.rotation.set(0.4, 0.6, 0.1);
     } else if (shape === 'star') {
       s.group.rotation.set(0.15, 0.3, 0.1);
+    } else if (shape === 'fish') {
+      s.group.rotation.set(0.15, 0.3, 0.1);
     }
 
     var camera = new THREE.PerspectiveCamera(35, 232 / 148, 0.1, 100);
-    camera.position.set(0, 0, shape === 'cube' ? 3.2 : shape === 'star' ? 3.0 : 3.6);
+    camera.position.set(0, 0, shape === 'cube' ? 3.2 : shape === 'star' ? 3.0 : shape === 'fish' ? 3.4 : 3.6);
     camera.lookAt(0, 0, 0);
 
     thumbRenderer.render(scene, camera);
@@ -334,6 +415,7 @@
     cube: cubeGeo,
     planet: planetGeo,
     star: starGeo,
+    fish: fishGeo,
     defaultTexture: defaultTexture,
     faceUVsFromManifest: faceUVsFromManifest,
     spawn: spawn,

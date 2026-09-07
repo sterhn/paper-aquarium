@@ -55,13 +55,26 @@ const TRIM_MM = 1.8;
 // name — ключ вида (имя записи в pack.json и в аквариуме), title — что видит
 // ребёнок, shape — что строит сцена, size — размер фигурки в аквариуме
 // (единицы сцены; аквариум примерно 24 × 13 × 24).
+const CONTOURS = (() => {
+  const p = path.join(__dirname, 'contours.json');
+  return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : {};
+})();
+
 const SPECIES = [
   { name: 'cube', title: 'Кубик', shape: 'cube', size: 1.0,
     face: 45, tab: 6, hint: 'Вырежи по сплошной линии, согни по пунктиру, склей за язычки — и кубик готов' },
   { name: 'planet', title: 'Планета', shape: 'sphere', size: 1.1,
     strip: [200, 100], hint: 'Раскрась полоску — она обернётся вокруг планеты. Левый и правый край сойдутся' },
   { name: 'star', title: 'Звезда', shape: 'star', size: 1.1,
-    star: true, hint: 'Раскрась звезду — она оживёт в аквариуме' }
+    star: true, hint: 'Раскрась звезду — она оживёт в аквариуме' },
+  { name: 'brownfish', title: 'Рыба-шоколадка', shape: 'fish', size: 1.5,
+    fish: true, hint: 'Раскрась рыбку — она оживёт в аквариуме' },
+  { name: 'clownfish', title: 'Рыба-клоун', shape: 'fish', size: 1.5,
+    fish: true, hint: 'Раскрась рыбку — она оживёт в аквариуме' },
+  { name: 'tuna', title: 'Тунец', shape: 'fish', size: 1.8,
+    fish: true, hint: 'Раскрась рыбку — она оживёт в аквариуме' },
+  { name: 'dory', title: 'Дори', shape: 'fish', size: 1.5,
+    fish: true, hint: 'Раскрась рыбку — она оживёт в аквариуме' },
 ];
 
 function sheetFile(name) { return name + '.svg'; }
@@ -229,10 +242,26 @@ function starNet() {
   return { faces: { map: rect(x0, y0, x1 - x0, y1 - y0) }, tabs: [], folds: [], outline };
 }
 
+function fishNet(name) {
+  const contour = CONTOURS[name];
+  if (!contour) throw new Error('нет контура для ' + name + ' — запустите tools/split-fish.js');
+  const aspect = contour.aspect;
+  const cx = SHEET.w / 2, cy = (SHEET.work.y0 + SHEET.work.y1) / 2;
+  const maxW = SHEET.work.x1 - SHEET.work.x0 - 20;
+  const maxH = SHEET.work.y1 - SHEET.work.y0 - 10;
+  let w, h;
+  if (maxW / maxH > aspect) { h = maxH; w = h * aspect; }
+  else { w = maxW; h = w / aspect; }
+  const x0 = cx - w / 2, y0 = cy - h / 2;
+  const outline = contour.outline.map(p => [x0 + p[0] * w, y0 + (1 - p[1]) * h]);
+  return { faces: { map: rect(x0, y0, w, h) }, tabs: [], folds: [], outline };
+}
+
 function netOf(s) {
   if (s.shape === 'cube') return cubeNet(s.face, s.tab);
   if (s.shape === 'sphere') return stripNet(s.strip[0], s.strip[1]);
   if (s.shape === 'star') return starNet();
+  if (s.shape === 'fish') return fishNet(s.name);
   throw new Error('не знаю, как разворачивать ' + s.shape);
 }
 
@@ -333,6 +362,9 @@ function main() {
       trim: TRIM_MM,
       hint: s.hint
     };
+    if (s.shape === 'fish' && CONTOURS[s.name]) {
+      f.outline = CONTOURS[s.name].outline;
+    }
     f._net = net;
     return f;
   });
