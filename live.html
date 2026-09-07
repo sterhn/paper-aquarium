@@ -219,6 +219,10 @@
       this.mat = null;
       var scaleFactor = (0.6 + Math.random() * 0.4) * size;
       this.group.scale.setScalar(scaleFactor);
+      var pivot = this.group.children[0];
+      pivot.quaternion.premultiply(
+        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI)
+      );
     } else {
       if (this.shape === 'fish') this.shape = 'sphere';
       var spawned = Shape.spawn(this.shape, size, null);
@@ -246,29 +250,6 @@
     scene.add(this.group);
   }
 
-  // ── attract ────────────────────────────────────────────────────────
-  var attractPoint = null;
-  var attractStrength = 0;
-  var _ndc = new THREE.Vector3(), _ray = new THREE.Vector3();
-
-  function screenToWorld(cx, cy) {
-    _ndc.set((cx / innerWidth) * 2 - 1, -(cy / innerHeight) * 2 + 1, 0.5);
-    _ndc.unproject(camera);
-    _ray.copy(_ndc).sub(camera.position).normalize();
-    var midZ = (Z_NEAR + Z_FAR) / 2;
-    var tVal = (midZ - camera.position.z) / _ray.z;
-    return new THREE.Vector3(
-      camera.position.x + _ray.x * tVal,
-      camera.position.y + _ray.y * tVal,
-      midZ
-    );
-  }
-
-  function attract(cx, cy) {
-    if (!camera) return;
-    attractPoint = screenToWorld(cx, cy);
-    attractStrength = 1.0;
-  }
 
   var _a = new THREE.Vector3(), _d = new THREE.Vector3();
   Figure.prototype.update = function (dt, t) {
@@ -277,15 +258,6 @@
       Math.sin(t * 0.3 + this.phase * 1.6) * 0.22,
       Math.cos(t * 0.37 + this.phase) * 0.5
     );
-
-    if (attractPoint && attractStrength > 0) {
-      _d.copy(attractPoint).sub(this.pos);
-      var ad = _d.length();
-      if (ad > 0.3) {
-        _d.normalize();
-        _a.addScaledVector(_d, attractStrength * (ad < 4 ? 3.5 : 1.8));
-      }
-    }
 
     if (foods.length && t > this.fullUntil) {
       var best = -1, bestD = 1e9;
@@ -473,10 +445,6 @@
     var dt = Math.min(clock.getDelta(), 0.05);
     var ti = clock.elapsedTime;
     if (window.FishGLB) FishGLB.uTime.value = ti;
-    if (attractStrength > 0) {
-      attractStrength -= dt * 0.14;
-      if (attractStrength < 0.01) { attractStrength = 0; attractPoint = null; }
-    }
     for (var i = 0; i < figures.length; i++) figures[i].update(dt, ti);
     updateFoods(dt, ti);
     renderer.render(scene, camera);
@@ -502,7 +470,6 @@
   document.addEventListener('click', function (e) {
     if (menuCard.contains(e.target) || !menu.hidden) return;
     if (e.target.id === 'menubtn' || e.target.closest('#menubtn')) return;
-    attract(e.clientX, e.clientY);
     taphint.hidden = true;
   });
   addEventListener('keydown', function (e) {
