@@ -303,6 +303,11 @@
 <button class="menubtn" id="menubtn" type="button">&#x2699;&#xFE0F;</button>
 
 <script src="/vendor/three.min.js"></script>
+<script src="/vendor/GLTFLoader.js"></script>
+<script src="/vendor/DRACOLoader.js"></script>
+<script src="/vendor/SkeletonUtils.js"></script>
+<script src="/assets/fish-frame.js"></script>
+<script src="/assets/fish-glb.js"></script>
 <script src="/assets/i18n.js"></script>
 <script src="/vendor/qr.js"></script>
 <script src="/assets/shape.js"></script>
@@ -351,6 +356,15 @@
   var renderer, scene, camera, clock;
   var fishes = [];
 
+  var FISH_SPECS = [
+    { name: 'brownfish', url: '/assets/models/brownfish.glb', length: 1.5 },
+    { name: 'clownfish', url: '/assets/models/clownfish.glb', length: 1.5 },
+    { name: 'tuna',      url: '/assets/models/tuna.glb',      length: 1.8 },
+    { name: 'dory',      url: '/assets/models/dory.glb',      length: 1.5 }
+  ];
+  var fishReady = false;
+  var fishSpecByName = {};
+
   // ── сцена ────────────────────────────────────────────────────────────────
   function init() {
     renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -374,13 +388,18 @@
     clock = new THREE.Clock();
     addEventListener('resize', onResize);
 
-    initPainted();
     initSettings();
     wantShot(3.5);
-    if (PACK) loadPack();
     var l = document.getElementById('loading');
     if (l) l.remove();
     animate();
+
+    FishGLB.load(FISH_SPECS, function (ok) {
+      fishReady = ok > 0;
+      FISH_SPECS.forEach(function (s) { if (s.gltf) fishSpecByName[s.name] = s; });
+      initPainted();
+      if (PACK) loadPack();
+    });
   }
 
   // ── фигуры ──────────────────────────────────────────────────────────────
@@ -401,10 +420,23 @@
       this.mesh = new THREE.Mesh(geo, mat);
       this.group = new THREE.Group();
       this.group.add(this.mesh);
+      this.mixer = null;
+    } else if (this.shape === 'fish' && fishReady && fishSpecByName[spec.fishKind]) {
+      var glbSpec = fishSpecByName[spec.fishKind];
+      var fish = FishGLB.spawn(glbSpec);
+      this.group = fish.group;
+      this.mixer = fish.mixer;
+      this.mesh = null;
+      this.group.scale.setScalar(size / glbSpec.length);
+      var pivot = this.group.children[0];
+      if (pivot) pivot.quaternion.premultiply(
+        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI)
+      );
     } else {
       var spawned = Shape.spawn(this.shape, size, spec.tex || null);
       this.group = spawned.group;
       this.mesh = spawned.mesh;
+      this.mixer = null;
     }
 
     var z0 = Z_FAR + Math.random() * (Z_NEAR - Z_FAR);
@@ -505,7 +537,14 @@
     this.pos.addScaledVector(this.vel, dt);
     this.group.position.copy(this.pos);
 
-    if (this.shape === 'cube') {
+    if (this.shape === 'fish' && this.mixer) {
+      var vx = this.vel.x, vz = this.vel.z;
+      var spd = Math.sqrt(vx * vx + vz * vz);
+      if (spd > 0.01) this.group.rotation.y = Math.atan2(vx, vz);
+      this.group.rotation.x = -this.vel.y * 0.2;
+      this.group.rotation.z = Math.sin(t * 0.5 + this.phase) * 0.08;
+      this.mixer.update(dt);
+    } else if (this.shape === 'cube') {
       this.group.rotation.x += dt * (0.2 + Math.sin(t * 0.7 + this.phase) * 0.15);
       this.group.rotation.y += dt * (0.3 + Math.cos(t * 0.5 + this.phase) * 0.1);
       this.group.rotation.z += dt * Math.sin(t * 0.4 + this.phase * 1.3) * 0.08;
@@ -664,7 +703,8 @@
       name: 'pack-' + name,
       shape: shape,
       size: size,
-      speed: 1.2 + Math.random() * 0.6
+      speed: 1.2 + Math.random() * 0.6,
+      fishKind: specName
     });
     fishes.push(figure);
     return figure;
@@ -813,6 +853,7 @@
     requestAnimationFrame(animate);
     var dt = Math.min(clock.getDelta(), 0.05);
     var t = clock.elapsedTime;
+    if (window.FishGLB) FishGLB.uTime.value = t;
 
     if (attractStrength > 0) {
       attractStrength -= dt * 0.14;
@@ -1123,6 +1164,31 @@
       });
   }
 
+  var fishThumbCache = {};
+  function fishThumbnail(glbSpec, cb) {
+    if (fishThumbCache[glbSpec.name]) return cb(fishThumbCache[glbSpec.name]);
+    var tr;
+    try { tr = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
+    catch (e) { return cb(null); }
+    tr.setPixelRatio(Math.min(devicePixelRatio, 2));
+    tr.setSize(232, 148);
+    tr.outputEncoding = THREE.sRGBEncoding;
+    var sc = new THREE.Scene();
+    sc.add(new THREE.AmbientLight(0xffffff, 0.9));
+    var key = new THREE.DirectionalLight(0xffffff, 1.6);
+    key.position.set(2, 3, 4); sc.add(key);
+    var fish = FishGLB.spawn(glbSpec);
+    sc.add(fish.group);
+    var cam = new THREE.PerspectiveCamera(35, 232 / 148, 0.1, 100);
+    cam.position.set(0, 0, glbSpec.length * 2.2);
+    cam.lookAt(0, 0, 0);
+    tr.render(sc, cam);
+    var url = tr.domElement.toDataURL('image/png');
+    fishThumbCache[glbSpec.name] = url;
+    tr.dispose();
+    cb(url);
+  }
+
   function fillPack(list) {
     packGrid.textContent = '';
     if (!list.length) {
@@ -1138,15 +1204,27 @@
       b.onclick = function () { addPackFish(item.name, b); };
       packGrid.appendChild(b);
 
-      Shape.thumbnail(item.shape, function (url) {
-        var slot = b.querySelector('.ph');
-        if (!slot) return;
-        if (!url) { slot.textContent = item.shape === 'cube' ? '▢' : item.shape === 'star' ? '★' : '○'; return; }
-        var img = document.createElement('img');
-        img.src = url;
-        img.alt = '';
-        slot.parentNode.replaceChild(img, slot);
-      });
+      (function (btn, item) {
+        var glb = fishSpecByName[item.name];
+        if (glb) {
+          fishThumbnail(glb, function (url) {
+            var slot = btn.querySelector('.ph');
+            if (!slot || !url) return;
+            var img = document.createElement('img');
+            img.src = url; img.alt = '';
+            slot.parentNode.replaceChild(img, slot);
+          });
+        } else {
+          Shape.thumbnail(item.shape, function (url) {
+            var slot = btn.querySelector('.ph');
+            if (!slot) return;
+            if (!url) { slot.textContent = item.shape === 'cube' ? '▢' : item.shape === 'star' ? '★' : '○'; return; }
+            var img = document.createElement('img');
+            img.src = url; img.alt = '';
+            slot.parentNode.replaceChild(img, slot);
+          });
+        }
+      })(b, item);
     });
   }
 
