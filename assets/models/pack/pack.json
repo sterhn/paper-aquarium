@@ -13,5 +13,25 @@
   "name": "star",
   "title": "Звезда",
   "shape": "star"
+ },
+ {
+  "name": "brownfish",
+  "title": "Рыба-шоколадка",
+  "shape": "fish"
+ },
+ {
+  "name": "clownfish",
+  "title": "Рыба-клоун",
+  "shape": "fish"
+ },
+ {
+  "name": "tuna",
+  "title": "Тунец",
+  "shape": "fish"
+ },
+ {
+  "name": "dory",
+  "title": "Дори",
+  "shape": "fish"
  }
 ]

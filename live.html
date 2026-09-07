@@ -120,6 +120,11 @@
 </div>
 
 <script src="vendor/three.min.js"></script>
+<script src="vendor/GLTFLoader.js"></script>
+<script src="vendor/DRACOLoader.js"></script>
+<script src="vendor/SkeletonUtils.js"></script>
+<script src="assets/fish-frame.js"></script>
+<script src="assets/fish-glb.js"></script>
 <script src="assets/shape.js"></script>
 <script>
 (function () {
@@ -155,7 +160,15 @@
 
   // ── constants ─────────────────────────────────────────────────────────
   var MAX_FIGURES = 100;
-  var SHAPES = ['cube', 'sphere', 'star'];
+  var SHAPES = ['cube', 'sphere', 'star', 'fish'];
+
+  var FISH_SPECS = [
+    { name: 'brownfish', url: 'assets/models/brownfish.glb', length: 1.5 },
+    { name: 'clownfish', url: 'assets/models/clownfish.glb', length: 1.5 },
+    { name: 'tuna',      url: 'assets/models/tuna.glb',      length: 1.8 },
+    { name: 'dory',      url: 'assets/models/dory.glb',      length: 1.5 }
+  ];
+  var fishReady = false;
 
   var Z_NEAR = 6, Z_FAR = -18, FLOOR = 0;
   var MARGIN = 1.6, FLOOR_ROOM = 0.9;
@@ -196,10 +209,24 @@
   function Figure(shape) {
     this.shape = shape || SHAPES[Math.floor(Math.random() * SHAPES.length)];
     var size = 0.9 + Math.random() * 0.5;
-    var spawned = Shape.spawn(this.shape, size, null);
-    this.group = spawned.group;
-    this.mesh = spawned.mesh;
-    this.mat = spawned.mat;
+
+    if (this.shape === 'fish' && fishReady) {
+      var spec = FISH_SPECS[Math.floor(Math.random() * FISH_SPECS.length)];
+      var fish = FishGLB.spawn(spec);
+      this.group = fish.group;
+      this.mixer = fish.mixer;
+      this.mesh = null;
+      this.mat = null;
+      var scaleFactor = (0.6 + Math.random() * 0.4) * size;
+      this.group.scale.setScalar(scaleFactor);
+    } else {
+      if (this.shape === 'fish') this.shape = 'sphere';
+      var spawned = Shape.spawn(this.shape, size, null);
+      this.group = spawned.group;
+      this.mesh = spawned.mesh;
+      this.mat = spawned.mat;
+      this.mixer = null;
+    }
 
     this.speed = 1.2 + Math.random() * 0.6;
     this.phase = Math.random() * 6.28;
@@ -296,7 +323,16 @@
     this.pos.addScaledVector(this.vel, dt);
     this.group.position.copy(this.pos);
 
-    if (this.shape === 'cube') {
+    if (this.shape === 'fish') {
+      var vx = this.vel.x, vz = this.vel.z;
+      var spd = Math.sqrt(vx * vx + vz * vz);
+      if (spd > 0.01) {
+        this.group.rotation.y = Math.atan2(vx, vz);
+      }
+      this.group.rotation.x = -this.vel.y * 0.2;
+      this.group.rotation.z = Math.sin(t * 0.5 + this.phase) * 0.08;
+      if (this.mixer) this.mixer.update(dt);
+    } else if (this.shape === 'cube') {
       this.group.rotation.x += dt * (0.3 + Math.sin(t * 0.5 + this.phase) * 0.15);
       this.group.rotation.y += dt * (0.4 + Math.cos(t * 0.4 + this.phase) * 0.1);
       this.group.rotation.z += dt * Math.sin(t * 0.35 + this.phase * 1.3) * 0.12;
@@ -411,12 +447,15 @@
     fill.position.set(12, 8, 20);
     scene.add(fill);
 
-    for (var i = 0; i < 3; i++) addFigure();
-    updateCount();
-
     clock = new THREE.Clock();
     addEventListener('resize', onResize);
     animate();
+
+    FishGLB.load(FISH_SPECS, function (ok) {
+      fishReady = ok > 0;
+      for (var i = 0; i < 3; i++) addFigure();
+      updateCount();
+    });
   }
 
   function addFigure() {
@@ -433,6 +472,7 @@
     requestAnimationFrame(animate);
     var dt = Math.min(clock.getDelta(), 0.05);
     var ti = clock.elapsedTime;
+    if (window.FishGLB) FishGLB.uTime.value = ti;
     if (attractStrength > 0) {
       attractStrength -= dt * 0.14;
       if (attractStrength < 0.01) { attractStrength = 0; attractPoint = null; }
