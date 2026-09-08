@@ -219,10 +219,6 @@
       this.mat = null;
       var scaleFactor = (0.6 + Math.random() * 0.4) * size;
       this.group.scale.setScalar(scaleFactor);
-      var pivot = this.group.children[0];
-      pivot.quaternion.premultiply(
-        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI)
-      );
     } else {
       if (this.shape === 'fish') this.shape = 'sphere';
       var spawned = Shape.spawn(this.shape, size, null);

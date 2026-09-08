@@ -411,7 +411,8 @@
     this.radius = size * 0.5;
 
     if (spec.paintedTex && spec.manifest) {
-      var geo = Shape.bake(spec.manifest);
+      var glbPainted = spec.manifest.shape === 'fish' && fishReady && fishSpecByName[spec.manifest.name];
+      var geo = glbPainted ? FishGLB.bake(glbPainted, { uv: 'side' }) : Shape.bake(spec.manifest);
       spec.paintedTex.encoding = THREE.sRGBEncoding;
       var mat = new THREE.MeshStandardMaterial({
         map: spec.paintedTex, roughness: 0.45, metalness: 0.05,
@@ -421,6 +422,7 @@
       this.group = new THREE.Group();
       this.group.add(this.mesh);
       this.mixer = null;
+      if (glbPainted) FishGLB.addBend(mat, glbPainted.info, 0.4, Math.random() * 6.28);
     } else if (this.shape === 'fish' && fishReady && fishSpecByName[spec.fishKind]) {
       var glbSpec = fishSpecByName[spec.fishKind];
       var fish = FishGLB.spawn(glbSpec);
@@ -428,10 +430,6 @@
       this.mixer = fish.mixer;
       this.mesh = null;
       this.group.scale.setScalar(size / glbSpec.length);
-      var pivot = this.group.children[0];
-      if (pivot) pivot.quaternion.premultiply(
-        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI)
-      );
     } else {
       var spawned = Shape.spawn(this.shape, size, spec.tex || null);
       this.group = spawned.group;

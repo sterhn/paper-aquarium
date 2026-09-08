@@ -97,11 +97,13 @@
       w.headAtMax = skel.headAtMax; local.headAtMax = skel.headAtMax;
     }
 
+    root.position.sub(w.center);
+
     if (upright) {
-      root.position.sub(w.center);
       return {
         quat: new THREE.Quaternion(),
         scale: targetLen / (w.size.y || 1),
+        upright: true,
         bodyMask: maskVec('z'),
         latMask: maskVec('x'),
         range: [local.box.min.z, local.box.max.z],
@@ -110,12 +112,10 @@
     }
 
     var quat = frameQuat(w);
-    root.position.sub(w.center);
 
     return {
       quat: quat,
       scale: targetLen / (w.size[w.body] || 1),
-      // для изгиба нужны СВОИ, локальные оси меша — шейдер правит position
       bodyMask: maskVec(local.body),
       latMask: maskVec(local.lat),
       range: [local.box.min[local.body], local.box.max[local.body]],
@@ -206,8 +206,23 @@
     var clone = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(spec.gltf.scene) : spec.gltf.scene.clone(true);
     var pivot = new THREE.Group();
     pivot.quaternion.copy(spec.info.quat);
+    if (!spec.info.upright) {
+      pivot.quaternion.premultiply(
+        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI)
+      );
+    }
     pivot.scale.setScalar(spec.info.scale);
     pivot.add(clone);
+
+    var group = new THREE.Group();
+    group.add(pivot);
+    group.updateWorldMatrix(false, true);
+    clone.traverse(function (child) {
+      if (child.isSkinnedMesh && child.skeleton) {
+        child.skeleton.calculateInverses();
+        child.bind(child.skeleton, child.matrixWorld);
+      }
+    });
 
     var mixer = null;
     if (spec.gltf.animations && spec.gltf.animations.length) {
@@ -232,8 +247,6 @@
       o.material = Array.isArray(o.material) ? mats : mats[0];
     });
 
-    var group = new THREE.Group();
-    group.add(pivot);
     return { group: group, mixer: mixer, phase: phase, mats: allMats };
   }
 
