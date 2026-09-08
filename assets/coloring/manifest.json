@@ -360,6 +360,7 @@
   },
   {
    "id": 4,
+   "hidden": true,
    "name": "brownfish",
    "title": "Рыба-шоколадка",
    "shape": "fish",
@@ -532,6 +533,7 @@
   },
   {
    "id": 5,
+   "hidden": true,
    "name": "clownfish",
    "title": "Рыба-клоун",
    "shape": "fish",
@@ -712,6 +714,7 @@
   },
   {
    "id": 6,
+   "hidden": true,
    "name": "tuna",
    "title": "Тунец",
    "shape": "fish",
@@ -852,6 +855,7 @@
   },
   {
    "id": 7,
+   "hidden": true,
    "name": "dory",
    "title": "Дори",
    "shape": "fish",
