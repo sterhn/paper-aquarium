@@ -144,7 +144,7 @@ fetch('/assets/coloring/manifest.json')
   .then(function (r) { return r.json(); })
   .then(function (m) {
     var list = document.getElementById('list');
-    m.fish.forEach(function (f) {
+    m.fish.filter(function (f) { return !f.hidden; }).forEach(function (f) {
       var card = document.createElement('div');
       card.className = 'card';
       card.dataset.fish = f.name;

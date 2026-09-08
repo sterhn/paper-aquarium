@@ -160,7 +160,7 @@
 
   // ── constants ─────────────────────────────────────────────────────────
   var MAX_FIGURES = 100;
-  var SHAPES = ['cube', 'sphere', 'star', 'fish'];
+  var SHAPES = ['cube', 'sphere', 'star'];
 
   var FISH_SPECS = [
     { name: 'brownfish', url: 'assets/models/brownfish.glb', length: 1.5 },
@@ -423,11 +423,8 @@
     addEventListener('resize', onResize);
     animate();
 
-    FishGLB.load(FISH_SPECS, function (ok) {
-      fishReady = ok > 0;
-      for (var i = 0; i < 3; i++) addFigure();
-      updateCount();
-    });
+    for (var i = 0; i < 3; i++) addFigure();
+    updateCount();
   }
 
   function addFigure() {
