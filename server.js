@@ -781,6 +781,28 @@ function handleTankApi(req, res, t, url) {
   send(res, 404, '{"error":"unknown api"}');
 }
 
+// Адреса компьютера в домашней сети, лучший — первым. На Windows первым в
+// списке часто стоит виртуальный адаптер (WSL, Hyper-V, VirtualBox), и QR
+// для телефона вёл в никуда. Поэтому виртуальные — в конец, а обычные
+// домашние 192.168.* и 10.* — в начало.
+const VIRTUAL_NIC_RE = /vethernet|virtualbox|vmware|hyper-v|wsl|docker|vbox|loopback|tailscale|zerotier/i;
+
+function lanAddresses() {
+  const nets = os.networkInterfaces();
+  const found = [];
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      if (net.family !== 'IPv4' && net.family !== 4) continue;
+      if (net.internal || net.address.startsWith('169.254.')) continue;
+      let score = 0;
+      if (VIRTUAL_NIC_RE.test(name)) score += 10;
+      if (!/^(192\.168\.|10\.)/.test(net.address)) score += 1;
+      found.push({ name, address: net.address, score });
+    }
+  }
+  return found.sort((a, b) => a.score - b.score).map((n) => n.address);
+}
+
 function handleApi(req, res, url) {
   // Пак один на все аквариумы, поэтому ручка общая.
   if (req.method === 'GET' && url === '/api/pack') {
@@ -788,14 +810,7 @@ function handleApi(req, res, url) {
   }
 
   if (req.method === 'GET' && url === '/api/lan') {
-    const nets = os.networkInterfaces();
-    const ips = [];
-    for (const name of Object.keys(nets)) {
-      for (const net of nets[name]) {
-        if (net.family === 'IPv4' && !net.internal) ips.push(net.address);
-      }
-    }
-    const ip = ips[0] || null;
+    const ip = lanAddresses()[0] || null;
     const origin = ip ? `http://${ip}:${PORT}` : null;
     return send(res, 200, JSON.stringify({ ip, origin }));
   }
@@ -900,6 +915,10 @@ function staticFor(url) {
   // ниже (startsWith ROOT) от этого не спасает: файл-то остаётся внутри
   // проекта, из корня он не выходит. Поэтому: любой адрес, который
   // нормализация меняет (лишний «.», «..» или «//»), — сразу мимо.
+  //
+  // Обратная косая — отдельно: posix.normalize её не видит, а на Windows
+  // path.join считает разделителем, и «/assets/..\server.js» уходил наружу.
+  if (url.includes('\\') || url.includes('\0')) return null;
   const clean = path.posix.normalize(url);
   if (clean !== url) return null;
 
@@ -943,6 +962,37 @@ function cacheControl(ext, url) {
 // Короткий адрес для чатов и описаний: /raskraski.pdf ведёт на PDF со всеми
 // листами.
 http.createServer((req, res) => {
+  // Любое исключение в обработчике иначе роняет весь процесс: один кривой
+  // адрес («/%E0%A4%A») или занятый антивирусом файл на Windows — и аквариум
+  // гаснет у всех.
+  try {
+    route(req, res);
+  } catch (e) {
+    const badUrl = e instanceof URIError;
+    if (!badUrl) console.error(`ошибка ${req.method} ${req.url}:`, e);
+    if (!res.headersSent) send(res, badUrl ? 400 : 500, badUrl ? '{"error":"кривой адрес"}' : '{"error":"ошибка сервера"}');
+    else res.destroy();
+  }
+}).listen(PORT, '0.0.0.0', () => {
+  console.log(`Аквариумы: http://localhost:${PORT}/`);
+  for (const ip of lanAddresses()) {
+    console.log(`С телефона (та же Wi-Fi сеть): http://${ip}:${PORT}/`);
+  }
+
+  // Корзину чистим при старте и раз в сутки: сервер домашний, его перезапускают
+  // редко, а обещание «через 30 дней» должно выполняться и без перезапуска.
+  purgeTrash();
+  setInterval(purgeTrash, 24 * 60 * 60 * 1000).unref();
+}).on('error', (e) => {
+  if (e.code === 'EADDRINUSE') {
+    console.error(`Порт ${PORT} уже занят: сервер уже запущен в другом окне или порт держит другая программа.`);
+    console.error('Закрой то окно или запусти на другом порту, например: $env:PORT=3000; node server.js');
+    process.exit(1);
+  }
+  throw e;
+});
+
+function route(req, res) {
   const url = decodeURIComponent(req.url.split('?')[0]);
 
   if (url.startsWith('/api/')) return handleApi(req, res, url);
@@ -986,20 +1036,5 @@ http.createServer((req, res) => {
 
   headers['Content-Type'] = MIME[ext] || 'application/octet-stream';
   res.writeHead(200, headers);
-  fs.createReadStream(file).pipe(res);
-}).listen(PORT, '0.0.0.0', () => {
-  console.log(`Аквариумы: http://localhost:${PORT}/`);
-  const nets = os.networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    for (const net of nets[name]) {
-      if (net.family === 'IPv4' && !net.internal) {
-        console.log(`С телефона (Wi-Fi ${name}): http://${net.address}:${PORT}/`);
-      }
-    }
-  }
-
-  // Корзину чистим при старте и раз в сутки: сервер домашний, его перезапускают
-  // редко, а обещание «через 30 дней» должно выполняться и без перезапуска.
-  purgeTrash();
-  setInterval(purgeTrash, 24 * 60 * 60 * 1000).unref();
-});
+  fs.createReadStream(file).on('error', () => res.destroy()).pipe(res);
+}

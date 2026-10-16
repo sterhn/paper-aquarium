@@ -1119,7 +1119,8 @@
       .then(function (m) {
         var list = m.fish || [];
         list.forEach(function (f) { sheetTitles[f.name] = f.title; });
-        fillPack(list);
+        // Скрытые виды (hidden в манифесте) не предлагаем, как и в print.html.
+        fillPack(list.filter(function (f) { return !f.hidden; }));
       })
       .catch(function () {
         packGrid.innerHTML = '<p class="who">' + I18N.t('menu.picker.nopack') + '</p>';

@@ -13,3 +13,6 @@ assets/coloring/manifest.json linguist-generated
 tools/contours.json linguist-generated
 tools/inner-fins.json linguist-generated
 docs/screenshots/* linguist-documentation
+
+# cmd.exe спотыкается о LF в .bat — им нужны виндовые переводы строк.
+*.bat text eol=crlf
