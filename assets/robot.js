@@ -12,8 +12,9 @@
    · бока проецируются в линию — край силуэта, и тянулись полосами.
      Теперь точка на боку берёт цвет чуть внутри силуэта (INSET): сдвиг
      против нормали, тем больше, чем сильнее треугольник смотрит вбок;
-   · экран с лицом остаётся родным — чёрный, с голубыми глазами и улыбкой.
-     Где он, знает манифест (fish.face, его считает tools/robot-face.html).
+   · глаза остаются родными — голубые, светящиеся; экран вокруг них и рот
+     ребёнок рисует сам. Где глаза, знает манифест (fish.eyes, их считает
+     tools/robot-face.html).
 
    Оси — как в glTF: +Y вверх, +Z к зрителю (лицо), +X вправо от зрителя.
 
@@ -23,9 +24,9 @@
      .bake(fish, opts)       → BufferGeometry раскрашенного робота ростом
                                fish.size; opts.legacy — текстура старого
                                образца (только перёд, кадр по габариту модели).
-                               Если в манифесте есть fish.face, экран с лицом
-                               выделен во вторую группу — см. materials()
-     .materials(geo, mat)    → [mat, материал экрана] или просто mat
+                               Если в манифесте есть fish.eyes, материалу
+                               нужны глаза — см. materials()
+     .materials(geo, mat)    → mat с голубыми глазами поверх раскраски
      .spawn(size, tex)       → { group, mesh, mat, mixer:null } — с родной
                                текстурой модели, если tex не передан
      .isLegacyTexture(image) → текстура старого образца? (портретная)
@@ -120,9 +121,6 @@
     var b = st.box;
     var spanX = Math.max(b.max.x - b.min.x, 1e-6), spanY = Math.max(b.max.y - b.min.y, 1e-6);
     var P = fish.projection, crop = fish.crop;
-    var face = fish.face || null;          // экран с лицом, оси модели
-    var orig = geo.attributes.uv ? geo.attributes.uv.array : null;
-    var isFace = new Uint8Array(n / 3);
 
     for (var t = 0; t < n; t += 3) {
       // Куда смотрит треугольник: z его нормали (по порядку вершин).
@@ -130,11 +128,6 @@
       var bx = pos.getX(t + 1) - ax, by = pos.getY(t + 1) - ay;
       var cx = pos.getX(t + 2) - ax, cy = pos.getY(t + 2) - ay;
       var front = bx * cy - by * cx >= 0;
-      if (face && orig && front) {
-        var mx = (ax + pos.getX(t + 1) + pos.getX(t + 2)) / 3;
-        var my = (ay + pos.getY(t + 1) + pos.getY(t + 2)) / 3;
-        isFace[t / 3] = inside(face, mx, my) ? 1 : 0;
-      }
 
       for (var k = 0; k < 3; k++) {
         var i = t + k;
@@ -159,62 +152,83 @@
       }
     }
     geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-    if (face && orig) geo = withFaceGroup(geo, isFace, orig);
+    // Глаза рисует материал (materials()), по маске в той же раскладке
+    // листа. У текстур старого образца раскладка другая — им глаза не нужны,
+    // лицо там нарисовано целиком.
+    if (!legacy && fish.eyes) geo.userData.robotEyes = fish;
     st.baked[key] = fit(geo, size);
     return st.baked[key];
   }
 
-  function inside(poly, x, y) {
-    var c = false;
-    for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      var xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
-      if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c;
-    }
-    return c;
-  }
-
-  // Экран с лицом остаётся родным: его треугольники переезжают в конец,
-  // получают исходную UV модели и вторую группу — под faceMaterial().
-  // Кто рисует одним материалом, получит робота целиком в раскраске.
-  function withFaceGroup(geo, isFace, orig) {
-    var pos = geo.attributes.position.array, nor = geo.attributes.normal.array, uv = geo.attributes.uv.array;
-    var tris = isFace.length, nFace = 0;
-    for (var f = 0; f < tris; f++) nFace += isFace[f];
-    var P2 = new Float32Array(pos.length), N2 = new Float32Array(nor.length), U2 = new Float32Array(uv.length);
-    var body = 0, head = tris - nFace;
-    for (var t = 0; t < tris; t++) {
-      var to = isFace[t] ? head++ : body++;
-      P2.set(pos.subarray(t * 9, t * 9 + 9), to * 9);
-      N2.set(nor.subarray(t * 9, t * 9 + 9), to * 9);
-      U2.set((isFace[t] ? orig : uv).subarray(t * 6, t * 6 + 6), to * 6);
-    }
-    var out = new THREE.BufferGeometry();
-    out.setAttribute('position', new THREE.BufferAttribute(P2, 3));
-    out.setAttribute('normal', new THREE.BufferAttribute(N2, 3));
-    out.setAttribute('uv', new THREE.BufferAttribute(U2, 2));
-    out.addGroup(0, (tris - nFace) * 3, 0);
-    out.addGroup((tris - nFace) * 3, nFace * 3, 1);
-    out.userData.robotFace = true;
-    return out;
-  }
-
-  // Материал экрана: родная текстура, чуть светится — глаза и улыбка
-  // голубым огоньком, чёрное остаётся чёрным. Один на всех роботов.
-  var faceMat = null;
-  function faceMaterial() {
-    if (!faceMat) {
-      faceMat = new THREE.MeshStandardMaterial({
-        map: st.map, roughness: 0.3, metalness: 0,
-        emissive: 0xffffff, emissiveMap: st.map, emissiveIntensity: 0.35
+  // ── глаза ──────────────────────────────────────────────────────────────
+  // Маска глаз в раскладке листа (как текстура раскраски): R — глаз,
+  // G — блик. Глаза — контуры с модели (fish.eyes), перенесённые на лист
+  // так же, как силуэт «спереди». Одна маска на вид, общая для всех роботов.
+  var eyeMasks = {};
+  function eyeMask(fish) {
+    if (eyeMasks[fish.name]) return eyeMasks[fish.name];
+    var P = fish.projection, crop = fish.crop;
+    var W = 512, H = Math.round(W * crop[3] / crop[2]);
+    var c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    var g = c.getContext('2d');
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, W, H);
+    var px = function (p) {
+      return [(P.front + P.scale * p[0] - crop[0]) / crop[2] * W, (P.oy - P.scale * p[1] - crop[1]) / crop[3] * H];
+    };
+    fish.eyes.forEach(function (eye) {
+      var pts = eye.map(px);
+      var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      g.beginPath();
+      pts.forEach(function (q, i) {
+        if (i) g.lineTo(q[0], q[1]); else g.moveTo(q[0], q[1]);
+        x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]);
       });
-    }
-    return faceMat;
+      g.closePath();
+      g.fillStyle = '#f00';
+      g.fill();
+      // блик — светлое пятнышко в верхней левой четверти глаза
+      var w = x1 - x0, h = y1 - y0;
+      g.fillStyle = '#ff0';
+      g.beginPath();
+      g.ellipse(x0 + w * 0.34, y0 + h * 0.3, w * 0.13, h * 0.11, 0, 0, Math.PI * 2);
+      g.fill();
+    });
+    var tex = new THREE.CanvasTexture(c);
+    eyeMasks[fish.name] = tex;
+    return tex;
   }
 
-  // Материалы для геометрии из bake(): с лицом — пара [раскраска, экран],
-  // без лица — сама раскраска.
+  // Голубые светящиеся глаза поверх раскраски: шейдер берёт маску по той же
+  // UV, что и рисунок, — края глаз гладкие, а сам рисунок не трогается
+  // (ползунок «Ярче цвета» продолжает работать). Цвет — в линейном
+  // пространстве, как diffuseColor после map_fragment.
+  var EYE = 'vec3(0.10, 0.70, 1.00)';
+  function withEyes(mat, mask) {
+    mat.onBeforeCompile = function (sh) {
+      sh.uniforms.eyeMap = { value: mask };
+      sh.fragmentShader = sh.fragmentShader
+        .replace('uniform vec3 diffuse;', 'uniform vec3 diffuse;\nuniform sampler2D eyeMap;')
+        .replace('#include <map_fragment>', [
+          '#include <map_fragment>',
+          'vec2 eyeK = texture2D(eyeMap, vUv).rg;',
+          'vec3 eyeCol = mix(' + EYE + ', vec3(1.0), eyeK.g * eyeK.r);',
+          'diffuseColor.rgb = mix(diffuseColor.rgb, eyeCol, eyeK.r);'
+        ].join('\n'))
+        .replace('#include <emissivemap_fragment>',
+          '#include <emissivemap_fragment>\ntotalEmissiveRadiance += eyeCol * eyeK.r * 0.55;');
+    };
+    mat.customProgramCacheKey = function () { return 'robot-eyes'; };
+    mat.needsUpdate = true;
+    return mat;
+  }
+
+  // Материал для геометрии из bake(): раскраске добавляются глаза, если
+  // они у вида есть. Остальное отдаётся как есть.
   function materials(geo, painted) {
-    return geo.userData && geo.userData.robotFace ? [painted, faceMaterial()] : painted;
+    var fish = geo.userData && geo.userData.robotEyes;
+    return fish && painted.map ? withEyes(painted, eyeMask(fish)) : painted;
   }
 
   function plainGeometry(size) {
