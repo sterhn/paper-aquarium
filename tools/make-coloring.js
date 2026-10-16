@@ -461,8 +461,13 @@ function main() {
   }
 
   for (const f of fish) {
-    fs.writeFileSync(path.join(OUT, sheetFile(f.name)), buildSvg(f, f._net), 'utf8');
+    const svg = buildSvg(f, f._net);
+    fs.writeFileSync(path.join(OUT, sheetFile(f.name)), svg, 'utf8');
     delete f._net;
+    // Отпечаток листа: print.html добавляет его к адресу (robot.svg?v=…).
+    // Лист поменялся — поменялся адрес, и браузер не покажет старую копию
+    // из кэша, сколько бы та ещё там ни жила.
+    f.v = require('crypto').createHash('sha1').update(svg).digest('hex').slice(0, 10);
   }
   fs.writeFileSync(
     path.join(OUT, 'manifest.json'),

@@ -100,9 +100,13 @@ var PDF = Q.has('pdf');
 
 // Готовый PDF собран генератором точно под A4 — в нём метки заведомо
 // правильного размера, в отличие от «Сохранить как PDF» с чужими полями.
+// К адресу листа и PDF — отпечаток из манифеста (make-coloring.js): после
+// обновления адрес другой, и старая копия из кэша браузера не всплывёт.
+// Манифест сам не кэшируется, так что отпечатки всегда свежие.
+var pdfVersion = '';
 var pdfLink = document.getElementById('pdfLink');
 function repdf() {
-  pdfLink.href = '/assets/coloring/raskraski.pdf';
+  pdfLink.href = '/assets/coloring/raskraski.pdf' + (pdfVersion ? '?v=' + pdfVersion : '');
   pdfLink.setAttribute('download', I18N.t('print.pdf.file'));
 }
 repdf();
@@ -137,14 +141,18 @@ function printOne(name) {
   print();
 }
 
-function sheetOf(f) { return '/' + f.svg.replace(/^\//, ''); }
+function sheetOf(f) { return '/' + f.svg.replace(/^\//, '') + (f.v ? '?v=' + f.v : ''); }
 function titleOf(f) { return f.title; }
 
 fetch('/assets/coloring/manifest.json')
   .then(function (r) { return r.json(); })
   .then(function (m) {
     var list = document.getElementById('list');
-    m.fish.filter(function (f) { return !f.hidden; }).forEach(function (f) {
+    var shown = m.fish.filter(function (f) { return !f.hidden; });
+    // PDF собран из видимых листов — его отпечаток складываем из их отпечатков.
+    pdfVersion = shown.map(function (f) { return f.v || ''; }).join('').slice(0, 40);
+    repdf();
+    shown.forEach(function (f) {
       var card = document.createElement('div');
       card.className = 'card';
       card.dataset.fish = f.name;
