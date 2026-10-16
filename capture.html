@@ -324,7 +324,7 @@
   var result = null;
 
   // ── 3D-предпросмотр: фигура с раскраской ребёнка вращается ───────────────
-  var P3 = { ready: false, renderer: null, scene: null, camera: null, group: null, raf: 0, stageW: -1, stageH: -1 };
+  var P3 = { ready: false, renderer: null, scene: null, camera: null, group: null, mat: null, raf: 0, stageW: -1, stageH: -1 };
 
   function init3D() {
     if (P3.ready) return true;
@@ -365,11 +365,14 @@
       return Robot.load(function () { show3D(kind); });
     }
 
+    // Раскраска — P3.mat. У робота в меше ещё и материал экрана, общий
+    // для всех роботов (robot.js), — его не освобождаем. Геометрию тоже:
+    // робот её кэширует, а остальным пересоздать недорого.
     if (P3.group) {
       P3.scene.remove(P3.group);
-      P3.group.children[0].material.map.dispose();
-      P3.group.children[0].material.dispose();
-      P3.group.children[0].geometry.dispose();
+      P3.mat.map.dispose();
+      P3.mat.dispose();
+      if (P3.group.userData.shape !== 'robot') P3.group.children[0].geometry.dispose();
     }
 
     var tex = new THREE.CanvasTexture(result.boost.texCanvas);
@@ -378,7 +381,8 @@
     var mat = new THREE.MeshStandardMaterial({
       map: tex, roughness: 0.45, metalness: 0.05, side: THREE.DoubleSide
     });
-    var mesh = new THREE.Mesh(geo, mat);
+    P3.mat = mat;
+    var mesh = new THREE.Mesh(geo, Shape.materials(geo, mat));
     var group = new THREE.Group();
     group.add(mesh);
     group.userData.shape = fish.shape;
@@ -489,7 +493,7 @@
     var v = boostEl.value / 100;
     if (result.boost.value === v) return;
     result.boost.set(v);
-    if (P3.group && P3.group.children[0]) P3.group.children[0].material.map.needsUpdate = true;
+    if (P3.mat) P3.mat.map.needsUpdate = true;
     var flat = document.getElementById('p-img');
     if (!flat.hidden) flat.src = result.boost.pvCanvas.toDataURL('image/png');
   }

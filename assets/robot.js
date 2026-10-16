@@ -11,7 +11,9 @@
      насквозь, и на затылке оказывалось зеркальное лицо;
    · бока проецируются в линию — край силуэта, и тянулись полосами.
      Теперь точка на боку берёт цвет чуть внутри силуэта (INSET): сдвиг
-     против нормали, тем больше, чем сильнее треугольник смотрит вбок.
+     против нормали, тем больше, чем сильнее треугольник смотрит вбок;
+   · экран с лицом остаётся родным — чёрный, с голубыми глазами и улыбкой.
+     Где он, знает манифест (fish.face, его считает tools/robot-face.html).
 
    Оси — как в glTF: +Y вверх, +Z к зрителю (лицо), +X вправо от зрителя.
 
@@ -20,7 +22,10 @@
      .ready / .failed        → загружена ли / не загрузилась насовсем
      .bake(fish, opts)       → BufferGeometry раскрашенного робота ростом
                                fish.size; opts.legacy — текстура старого
-                               образца (только перёд, кадр по габариту модели)
+                               образца (только перёд, кадр по габариту модели).
+                               Если в манифесте есть fish.face, экран с лицом
+                               выделен во вторую группу — см. materials()
+     .materials(geo, mat)    → [mat, материал экрана] или просто mat
      .spawn(size, tex)       → { group, mesh, mat, mixer:null } — с родной
                                текстурой модели, если tex не передан
      .isLegacyTexture(image) → текстура старого образца? (портретная)
@@ -115,6 +120,9 @@
     var b = st.box;
     var spanX = Math.max(b.max.x - b.min.x, 1e-6), spanY = Math.max(b.max.y - b.min.y, 1e-6);
     var P = fish.projection, crop = fish.crop;
+    var face = fish.face || null;          // экран с лицом, оси модели
+    var orig = geo.attributes.uv ? geo.attributes.uv.array : null;
+    var isFace = new Uint8Array(n / 3);
 
     for (var t = 0; t < n; t += 3) {
       // Куда смотрит треугольник: z его нормали (по порядку вершин).
@@ -122,6 +130,11 @@
       var bx = pos.getX(t + 1) - ax, by = pos.getY(t + 1) - ay;
       var cx = pos.getX(t + 2) - ax, cy = pos.getY(t + 2) - ay;
       var front = bx * cy - by * cx >= 0;
+      if (face && orig && front) {
+        var mx = (ax + pos.getX(t + 1) + pos.getX(t + 2)) / 3;
+        var my = (ay + pos.getY(t + 1) + pos.getY(t + 2)) / 3;
+        isFace[t / 3] = inside(face, mx, my) ? 1 : 0;
+      }
 
       for (var k = 0; k < 3; k++) {
         var i = t + k;
@@ -146,8 +159,62 @@
       }
     }
     geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    if (face && orig) geo = withFaceGroup(geo, isFace, orig);
     st.baked[key] = fit(geo, size);
     return st.baked[key];
+  }
+
+  function inside(poly, x, y) {
+    var c = false;
+    for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      var xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+      if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c;
+    }
+    return c;
+  }
+
+  // Экран с лицом остаётся родным: его треугольники переезжают в конец,
+  // получают исходную UV модели и вторую группу — под faceMaterial().
+  // Кто рисует одним материалом, получит робота целиком в раскраске.
+  function withFaceGroup(geo, isFace, orig) {
+    var pos = geo.attributes.position.array, nor = geo.attributes.normal.array, uv = geo.attributes.uv.array;
+    var tris = isFace.length, nFace = 0;
+    for (var f = 0; f < tris; f++) nFace += isFace[f];
+    var P2 = new Float32Array(pos.length), N2 = new Float32Array(nor.length), U2 = new Float32Array(uv.length);
+    var body = 0, head = tris - nFace;
+    for (var t = 0; t < tris; t++) {
+      var to = isFace[t] ? head++ : body++;
+      P2.set(pos.subarray(t * 9, t * 9 + 9), to * 9);
+      N2.set(nor.subarray(t * 9, t * 9 + 9), to * 9);
+      U2.set((isFace[t] ? orig : uv).subarray(t * 6, t * 6 + 6), to * 6);
+    }
+    var out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.BufferAttribute(P2, 3));
+    out.setAttribute('normal', new THREE.BufferAttribute(N2, 3));
+    out.setAttribute('uv', new THREE.BufferAttribute(U2, 2));
+    out.addGroup(0, (tris - nFace) * 3, 0);
+    out.addGroup((tris - nFace) * 3, nFace * 3, 1);
+    out.userData.robotFace = true;
+    return out;
+  }
+
+  // Материал экрана: родная текстура, чуть светится — глаза и улыбка
+  // голубым огоньком, чёрное остаётся чёрным. Один на всех роботов.
+  var faceMat = null;
+  function faceMaterial() {
+    if (!faceMat) {
+      faceMat = new THREE.MeshStandardMaterial({
+        map: st.map, roughness: 0.3, metalness: 0,
+        emissive: 0xffffff, emissiveMap: st.map, emissiveIntensity: 0.35
+      });
+    }
+    return faceMat;
+  }
+
+  // Материалы для геометрии из bake(): с лицом — пара [раскраска, экран],
+  // без лица — сама раскраска.
+  function materials(geo, painted) {
+    return geo.userData && geo.userData.robotFace ? [painted, faceMaterial()] : painted;
   }
 
   function plainGeometry(size) {
@@ -180,6 +247,7 @@
     failed: false,
     load: load,
     bake: bake,
+    materials: materials,
     spawn: spawn,
     isLegacyTexture: isLegacyTexture
   };

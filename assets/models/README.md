@@ -129,13 +129,17 @@ FBX → glTF собирает `tools/convert-pack.ps1`.
 остальные строит `assets/shape.js`. Модель сгенерирована нейросетью, её
 собственная UV не годится под рисунок, поэтому раскрашенному роботу
 `assets/robot.js` считает UV заново: лист рисует робота спереди и сзади,
-и каждый треугольник берёт цвет с той стороны, куда смотрит.
+и каждый треугольник берёт цвет с той стороны, куда смотрит. Экран с лицом
+остаётся родным — чёрный, с голубыми глазами и улыбкой; на листе он
+нарисован контуром.
 
 Пересборка после замены модели:
 
 1. `node tools/slim-glb.js исходник.glb assets/models/pack/robot/textured_mesh.glb`
    — выкидывает неиспользуемую карту металла (из 3.8 МБ остаётся 1.5).
 2. `node tools/robot-front-contour.js` — силуэт в `tools/contours.json`.
-3. `node tools/make-coloring.js` и `node tools/make-pdf.js` — лист и PDF.
-4. Проверка глазами: `/tools/figure-test.html?kind=robot` — робот
+3. `/tools/robot-face.html` (сервер запущен) — где экран с лицом; скачать
+   contours.json и положить в `tools/`.
+4. `node tools/make-coloring.js` и `node tools/make-pdf.js` — лист и PDF.
+5. Проверка глазами: `/tools/figure-test.html?kind=robot` — робот
    с четырёх сторон после настоящего распознавания листа.

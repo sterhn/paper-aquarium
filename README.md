@@ -79,6 +79,9 @@ node server.js          # http://localhost:8000
 Node 18+ is required. There is nothing to install: no dependencies, and
 three.js sits in `vendor/`. The port is set by `PORT`.
 
+Double-click launchers: `start.bat` on Windows, `start.command` on a Mac.
+Step-by-step guides (in Russian): [WINDOWS.md](WINDOWS.md), [MAC.md](MAC.md).
+
 The server prints the addresses of every network interface — use them to open
 the aquarium from a phone or a TV on the same Wi-Fi.
 
