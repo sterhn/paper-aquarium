@@ -84,7 +84,7 @@ const SPECIES = [
   // Новые виды — только в конец списка: тогда коды меток у прежних не
   // меняются и напечатанные листы остаются рабочими.
   { name: 'robot', title: 'Робот', shape: 'robot', size: 1.8,
-    hint: 'Раскрась робота спереди и сзади и нарисуй ему на экране рот — какое у него настроение?' },
+    hint: 'Раскрась робота спереди и сзади и нарисуй ему лицо на экране' },
 ];
 
 function sheetFile(name) { return name + '.svg'; }
@@ -306,14 +306,12 @@ function robotNet(name) {
     faces: { front: box(front), back: box(back) },
     tabs: [], folds: [],
     outlines: [front, back],
-    // Экран и глаза — контуром: где лицо, видно сразу. Глаза в аквариуме
-    // остаются родными, светящимися (assets/robot.js), а экран и рот ребёнок
-    // рисует сам — так у каждого робота своё настроение.
+    // Экран — контуром: видно, где лицо. Само лицо ребёнок рисует целиком,
+    // и в аквариуме оно ровно такое, как нарисовано.
     guides: c.face
-      ? [c.face.screen].concat(c.face.eyes).map((pts) =>
+      ? [c.face.screen].map((pts) =>
         pts.map(([x, y]) => [r2(projection.front + projection.scale * x), r2(projection.oy - projection.scale * y)]))
       : [],
-    eyes: c.face ? c.face.eyes : null,
     labels: [[cxFront, labelY, 'спереди'], [cxBack, labelY, 'сзади']],
     projection,
     contours: { front, back }
@@ -448,8 +446,6 @@ function main() {
     if (net.projection) {
       f.projection = net.projection;
       f.contours = net.contours;
-      // глаза в осях модели: эти треугольники robot.js красит родной текстурой
-      if (net.eyes) f.eyes = net.eyes;
     }
     f._net = net;
     return f;

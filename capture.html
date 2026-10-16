@@ -409,6 +409,7 @@
         P3.camera.updateProjectionMatrix();
       }
       var t = (now - t0) / 1000;
+      if (window.Robot) Robot.uTime.value = t;
       if (P3.group) {
         if (P3.group.userData.shape === 'cube') {
           P3.group.rotation.y = Math.sin(t * 0.5) * 0.7;

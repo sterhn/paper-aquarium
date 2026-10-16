@@ -862,6 +862,7 @@
     var dt = Math.min(clock.getDelta(), 0.05);
     var t = clock.elapsedTime;
     if (window.FishGLB) FishGLB.uTime.value = t;
+    if (window.Robot) Robot.uTime.value = t;   // роботы машут руками и ногами
 
     for (var i = 0; i < fishes.length; i++) fishes[i].update(dt, t);
     if (foods.length) updateFoods(dt, t);

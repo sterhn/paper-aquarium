@@ -12,9 +12,9 @@
    · бока проецируются в линию — край силуэта, и тянулись полосами.
      Теперь точка на боку берёт цвет чуть внутри силуэта (INSET): сдвиг
      против нормали, тем больше, чем сильнее треугольник смотрит вбок;
-   · глаза остаются родными — голубые, светящиеся; экран вокруг них и рот
-     ребёнок рисует сам. Где глаза, знает манифест (fish.eyes, их считает
-     tools/robot-face.html).
+   · лицо ребёнок рисует сам — на листе экран обведён контуром;
+   · скелета у модели нет, движение (руки, ноги, антенна, голова) задаёт
+     вершинный шейдер — см. RIG.
 
    Оси — как в glTF: +Y вверх, +Z к зрителю (лицо), +X вправо от зрителя.
 
@@ -24,9 +24,9 @@
      .bake(fish, opts)       → BufferGeometry раскрашенного робота ростом
                                fish.size; opts.legacy — текстура старого
                                образца (только перёд, кадр по габариту модели).
-                               Если в манифесте есть fish.eyes, материалу
-                               нужны глаза — см. materials()
-     .materials(geo, mat)    → mat с голубыми глазами поверх раскраски
+     .materials(geo, mat)    → mat с движением (см. RIG)
+     .uTime                  → { value } — время анимации, сцена обновляет его
+                               каждый кадр
      .spawn(size, tex)       → { group, mesh, mat, mixer:null } — с родной
                                текстурой модели, если tex не передан
      .isLegacyTexture(image) → текстура старого образца? (портретная)
@@ -97,6 +97,8 @@
     geo.translate(-(b.min.x + b.max.x) / 2, -(b.min.y + b.max.y) / 2, -(b.min.z + b.max.z) / 2);
     geo.scale(k, k, k);
     geo.computeBoundingSphere();
+    // Обратный путь для анимации (RIG): исходные оси = подогнанные / k + центр.
+    geo.userData.robotFit = [(b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2, k];
     return geo;
   }
 
@@ -152,83 +154,73 @@
       }
     }
     geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-    // Глаза рисует материал (materials()), по маске в той же раскладке
-    // листа. У текстур старого образца раскладка другая — им глаза не нужны,
-    // лицо там нарисовано целиком.
-    if (!legacy && fish.eyes) geo.userData.robotEyes = fish;
     st.baked[key] = fit(geo, size);
     return st.baked[key];
   }
 
-  // ── глаза ──────────────────────────────────────────────────────────────
-  // Маска глаз в раскладке листа (как текстура раскраски): R — глаз,
-  // G — блик. Глаза — контуры с модели (fish.eyes), перенесённые на лист
-  // так же, как силуэт «спереди». Одна маска на вид, общая для всех роботов.
-  var eyeMasks = {};
-  function eyeMask(fish) {
-    if (eyeMasks[fish.name]) return eyeMasks[fish.name];
-    var P = fish.projection, crop = fish.crop;
-    var W = 512, H = Math.round(W * crop[3] / crop[2]);
-    var c = document.createElement('canvas');
-    c.width = W; c.height = H;
-    var g = c.getContext('2d');
-    g.fillStyle = '#000';
-    g.fillRect(0, 0, W, H);
-    var px = function (p) {
-      return [(P.front + P.scale * p[0] - crop[0]) / crop[2] * W, (P.oy - P.scale * p[1] - crop[1]) / crop[3] * H];
-    };
-    fish.eyes.forEach(function (eye) {
-      var pts = eye.map(px);
-      var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-      g.beginPath();
-      pts.forEach(function (q, i) {
-        if (i) g.lineTo(q[0], q[1]); else g.moveTo(q[0], q[1]);
-        x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]);
-      });
-      g.closePath();
-      g.fillStyle = '#f00';
-      g.fill();
-      // блик — светлое пятнышко в верхней левой четверти глаза
-      var w = x1 - x0, h = y1 - y0;
-      g.fillStyle = '#ff0';
-      g.beginPath();
-      g.ellipse(x0 + w * 0.34, y0 + h * 0.3, w * 0.13, h * 0.11, 0, 0, Math.PI * 2);
-      g.fill();
-    });
-    var tex = new THREE.CanvasTexture(c);
-    eyeMasks[fish.name] = tex;
-    return tex;
-  }
+  // ── движение ────────────────────────────────────────────────────────────
+  // Скелета у модели нет — она одна цельная оболочка, — поэтому шевелит её
+  // вершинный шейдер. Часть тела вершина узнаёт по тому, где стоит (оси
+  // модели, вид спереди: tools/robot-face.html), и поворачивается вокруг
+  // своего сустава. Веса плавные — сустав гнётся, а не рвётся.
+  //   ноги  — ниже таза (Y < −0.56) и ближе к середине, чем |X| 0.35;
+  //           внизу кисти висят дальше |X| 0.40, так их и различаем;
+  //   руки  — от плеча вниз, снаружи туловища (|X| > 0.28, у кистей > 0.37);
+  //   антенна — выше Y 0.70;  голова — выше шеи (Y > −0.1).
+  // Руки и ноги машут навстречу друг другу, как при ходьбе, антенна
+  // пружинит, голова чуть покачивается. Фаза у каждого робота своя.
+  var uTime = { value: 0 };
+  var RIG = [
+    'uniform float uRobotTime;',
+    'uniform float uRobotPhase;',
+    'uniform vec4 uRobotFit;',
+    'mat3 robotRotX(float a) { float c = cos(a), s = sin(a); return mat3(1.0, 0.0, 0.0, 0.0, c, s, 0.0, -s, c); }',
+    'mat3 robotRotZ(float a) { float c = cos(a), s = sin(a); return mat3(c, s, 0.0, -s, c, 0.0, 0.0, 0.0, 1.0); }',
+    'void robotBend(inout vec3 p, inout vec3 n, mat3 R, vec3 pivot, float w) {',
+    '  p = mix(p, pivot + R * (p - pivot), w);',
+    '  n = mix(n, R * n, w);',
+    '}',
+    'void robotRig(inout vec3 p, inout vec3 n) {',
+    '  vec3 q = p / uRobotFit.w + uRobotFit.xyz;',
+    '  vec3 r = q;',
+    '  float t = uRobotTime * 4.0 + uRobotPhase;',
+    '  float ax = abs(q.x);',
+    '  float side = q.x < 0.0 ? -1.0 : 1.0;',
+    '  float legW = (1.0 - smoothstep(-0.66, -0.56, q.y)) * (1.0 - smoothstep(0.345, 0.37, ax));',
+    '  robotBend(r, n, robotRotX(0.32 * sin(t) * side), vec3(0.18 * side, -0.60, 0.03), legW);',
+    '  float xa = mix(0.28, 0.37, 1.0 - smoothstep(-0.62, -0.50, q.y));',
+    '  float armW = smoothstep(xa - 0.015, xa + 0.015, ax) * (1.0 - smoothstep(-0.17, -0.12, q.y));',
+    '  mat3 arm = robotRotX(-0.38 * sin(t) * side) * robotRotZ(0.10 * side * (0.5 + 0.5 * sin(t * 2.0)));',
+    '  robotBend(r, n, arm, vec3(0.30 * side, -0.22, 0.02), armW);',
+    '  robotBend(r, n, robotRotZ(0.22 * sin(t * 1.7)), vec3(-0.10, 0.72, 0.0), smoothstep(0.70, 0.78, q.y));',
+    '  mat3 head = robotRotZ(0.07 * sin(t * 0.5)) * robotRotX(0.05 * sin(t));',
+    '  robotBend(r, n, head, vec3(0.0, -0.10, 0.0), smoothstep(-0.16, -0.08, q.y));',
+    '  p = (r - uRobotFit.xyz) * uRobotFit.w;',
+    '}'
+  ].join('\n');
 
-  // Голубые светящиеся глаза поверх раскраски: шейдер берёт маску по той же
-  // UV, что и рисунок, — края глаз гладкие, а сам рисунок не трогается
-  // (ползунок «Ярче цвета» продолжает работать). Цвет — в линейном
-  // пространстве, как diffuseColor после map_fragment.
-  var EYE = 'vec3(0.10, 0.70, 1.00)';
-  function withEyes(mat, mask) {
+  // Материалу робота — движение.
+  function patch(mat, geo) {
+    var fit = geo.userData.robotFit;
+    if (!fit) return mat;
+    var phase = Math.random() * Math.PI * 2;
     mat.onBeforeCompile = function (sh) {
-      sh.uniforms.eyeMap = { value: mask };
-      sh.fragmentShader = sh.fragmentShader
-        .replace('uniform vec3 diffuse;', 'uniform vec3 diffuse;\nuniform sampler2D eyeMap;')
-        .replace('#include <map_fragment>', [
-          '#include <map_fragment>',
-          'vec2 eyeK = texture2D(eyeMap, vUv).rg;',
-          'vec3 eyeCol = mix(' + EYE + ', vec3(1.0), eyeK.g * eyeK.r);',
-          'diffuseColor.rgb = mix(diffuseColor.rgb, eyeCol, eyeK.r);'
-        ].join('\n'))
-        .replace('#include <emissivemap_fragment>',
-          '#include <emissivemap_fragment>\ntotalEmissiveRadiance += eyeCol * eyeK.r * 0.55;');
+      sh.uniforms.uRobotTime = uTime;
+      sh.uniforms.uRobotPhase = { value: phase };
+      sh.uniforms.uRobotFit = { value: new THREE.Vector4(fit[0], fit[1], fit[2], fit[3]) };
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\n' + RIG)
+        .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvec3 robotP = position;\nrobotRig(robotP, objectNormal);')
+        .replace('#include <begin_vertex>', 'vec3 transformed = robotP;');
     };
-    mat.customProgramCacheKey = function () { return 'robot-eyes'; };
+    mat.customProgramCacheKey = function () { return 'robot-rig'; };
     mat.needsUpdate = true;
     return mat;
   }
 
-  // Материал для геометрии из bake(): раскраске добавляются глаза, если
-  // они у вида есть. Остальное отдаётся как есть.
+  // Материал для геометрии из bake(): раскраске — то же движение.
   function materials(geo, painted) {
-    var fish = geo.userData && geo.userData.robotEyes;
-    return fish && painted.map ? withEyes(painted, eyeMask(fish)) : painted;
+    return patch(painted, geo);
   }
 
   function plainGeometry(size) {
@@ -249,6 +241,7 @@
       // почти чёрным. Родная текстура и так даёт белый пластик и экран.
       mat = new THREE.MeshStandardMaterial({ map: st.map, roughness: 0.55, metalness: 0 });
     }
+    patch(mat, geo);
     var mesh = new THREE.Mesh(geo, mat);
     var group = new THREE.Group();
     group.add(mesh);
@@ -257,6 +250,7 @@
 
   var Robot = {
     URL: URL,
+    uTime: uTime,      // секунды анимации: сцена ставит каждый кадр
     ready: false,
     failed: false,
     load: load,

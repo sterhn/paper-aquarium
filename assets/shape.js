@@ -376,8 +376,8 @@
     }
   }
 
-  // Материал для геометрии из bake(): роботу поверх раскраски нужны глаза
-  // (robot.js), остальным раскраска отдаётся как есть.
+  // Материал для геометрии из bake(): роботу — движение (robot.js),
+  // остальным раскраска отдаётся как есть.
   function materials(geo, mat) {
     return window.Robot && Robot.materials ? Robot.materials(geo, mat) : mat;
   }
