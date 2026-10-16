@@ -986,7 +986,8 @@ http.createServer((req, res) => {
 }).on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
     console.error(`Порт ${PORT} уже занят: сервер уже запущен в другом окне или порт держит другая программа.`);
-    console.error('Закрой то окно или запусти на другом порту, например: $env:PORT=3000; node server.js');
+    console.error('Закрой то окно или запусти на другом порту, например: ' +
+      (process.platform === 'win32' ? '$env:PORT=3000; node server.js' : 'PORT=3000 node server.js'));
     process.exit(1);
   }
   throw e;

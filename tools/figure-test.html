@@ -17,8 +17,8 @@
      как в аквариуме. Внизу — фигура с четырёх сторон: спереди,
      вполоборота, сбоку, сзади.
 
-     ?kind=robot (по умолчанию) — перёд и спина разными цветами: лицо
-       спереди, на спине свой рисунок, на боках нет полос.
+     ?kind=robot (по умолчанию) — перёд и спина разными цветами: спереди
+       родной экран с лицом, на спине свой рисунок, на боках нет полос.
        ?legacy — текстура старого образца (только перёд).
      ?kind=star, cube, planet… — верх листа красный, низ синий, слева
        зелёная полоса, в центре жёлтый круг: по ним видно, что рисунок
@@ -76,16 +76,13 @@
       var q = at(side, X, Y);
       g.fillStyle = col; g.beginPath(); g.arc(q[0], q[1], r * P.scale * PX, 0, 7); g.fill();
     }
-    // перёд: голова голубая с тёмным экраном и глазами, туловище оранжевое, ноги зелёные
+    // перёд: голова голубая, туловище оранжевое, ноги зелёные
     clip('front');
     band('front', 0.62, 1.1, '#f6c344');
     band('front', -0.2, 0.62, '#7cc6f2');
     band('front', -0.62, -0.2, '#f08a3c');
     band('front', -1.1, -0.62, '#4caf50');
-    var s1 = at('front', -0.3, 0.42), s2 = at('front', 0.3, 0.0);
-    g.fillStyle = '#1d2333'; g.fillRect(s1[0], s1[1], s2[0] - s1[0], s2[1] - s1[1]);
-    dot('front', -0.13, 0.22, 0.06, '#5ff');
-    dot('front', 0.13, 0.22, 0.06, '#5ff');
+    // экран с лицом не красим: у робота он свой (fish.face)
     g.restore();
     // спина: вся фиолетовая, на голове жёлтое сердце (кружки), на туловище красный ранец
     clip('back');
@@ -120,7 +117,7 @@
       sc.background = new THREE.Color(0x2a2f45);
       sc.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.9));
       var dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(1, 2, 3); sc.add(dl);
-      var m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5, metalness: 0.05 }));
+      var m = new THREE.Mesh(geo, Shape.materials(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5, metalness: 0.05 })));
       m.rotation.y = ang;
       sc.add(m);
       var cam = new THREE.PerspectiveCamera(30, 300 / 420, 0.1, 50);

@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Лицо робота</title>
+<style>
+  body { margin: 0; padding: 24px; background: #0b1a26; color: #eaf6ff;
+         font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub, span.sub { color: #8aa6bd; }
+  canvas { background: #fff; border-radius: 10px; max-width: 420px; display: block; margin-top: 12px; }
+</style>
+</head>
+<body>
+<!-- Где у робота экран с лицом — в осях модели, вид спереди.
+
+     Раскрашенному роботу экран оставляем родной: чёрный, с голубыми
+     глазами и улыбкой (assets/robot.js), а на листе раскраски экран
+     нарисован контуром — чтобы было видно, где лицо (make-coloring.js).
+     Обоим нужен один и тот же контур, его и считает эта страница:
+
+       1. рисует модель спереди с её текстурой, без света;
+       2. экран — самое большое тёмное пятно посередине головы, дырки
+          (глаза, улыбка) заливаются;
+       3. глаза и улыбка — светлые пятна внутри экрана.
+
+     Результат — contours.json с полем robot.face {screen, features};
+     положить в tools/ и запустить node tools/make-coloring.js. -->
+<h1>Лицо робота</h1>
+<p class="sub" id="status">Загрузка…</p>
+<p><button id="save" disabled>Скачать contours.json</button>
+<span class="sub">→ положить в tools/ и запустить <code>node tools/make-coloring.js</code></span></p>
+<canvas id="view"></canvas>
+
+<script src="../vendor/three.min.js"></script>
+<script src="../vendor/GLTFLoader.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var W = 1000;            // ширина растра, px
+  var SIMPLIFY_PX = 2.0;   // Дуглас–Пекер, px растра
+  var status = document.getElementById('status');
+
+  function traceBoundary(mask, w, h) {
+    var dirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+    var sx = -1, sy = -1;
+    outer:
+    for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) if (mask[y * w + x]) { sx = x; sy = y; break outer; }
+    if (sx < 0) return [];
+    var pts = [], cx = sx, cy = sy, dir = 7;
+    do {
+      pts.push([cx, cy]);
+      var found = false;
+      for (var i = 0; i < 8; i++) {
+        var d = (dir + 6 + i) % 8, nx = cx + dirs[d][0], ny = cy + dirs[d][1];
+        if (nx >= 0 && ny >= 0 && nx < w && ny < h && mask[ny * w + nx]) { cx = nx; cy = ny; dir = d; found = true; break; }
+      }
+      if (!found) break;
+    } while ((cx !== sx || cy !== sy) && pts.length < w * h);
+    return pts;
+  }
+
+  function rdp(pts, eps) {
+    if (pts.length < 3) return pts.slice();
+    var keep = new Uint8Array(pts.length);
+    keep[0] = keep[pts.length - 1] = 1;
+    var stack = [[0, pts.length - 1]];
+    while (stack.length) {
+      var ab = stack.pop(), a = ab[0], b = ab[1];
+      var ax = pts[a][0], ay = pts[a][1], dx = pts[b][0] - ax, dy = pts[b][1] - ay;
+      var len = Math.sqrt(dx * dx + dy * dy) || 1, maxD = 0, maxI = -1;
+      for (var i = a + 1; i < b; i++) {
+        var dd = Math.abs((pts[i][0] - ax) * dy - (pts[i][1] - ay) * dx) / len;
+        if (dd > maxD) { maxD = dd; maxI = i; }
+      }
+      if (maxD > eps) { keep[maxI] = 1; stack.push([a, maxI], [maxI, b]); }
+    }
+    return pts.filter(function (_, j) { return keep[j]; });
+  }
+
+  // Контур замкнутый, а rdp считает его отрезком и всегда оставляет концы —
+  // точку, с которой начался обход, даже если это однопиксельный бугорок.
+  // Здесь концы (и всё, что после них стало лишним) проверяются по соседям.
+  function rdpClosed(pts, eps) {
+    var out = rdp(pts, eps);
+    if (out.length > 1) {
+      var a = out[0], z = out[out.length - 1];
+      if (Math.abs(a[0] - z[0]) <= 1 && Math.abs(a[1] - z[1]) <= 1) out.pop();
+    }
+    // Мелкие острые зубцы (оба ребра короче 16 px, угол острее 120°) —
+    // шум текстуры: шов, упёршийся в край экрана.
+    var spiky = true;
+    while (spiky && out.length > 3) {
+      spiky = false;
+      for (var s = 0; s < out.length; s++) {
+        var a0 = out[(s - 1 + out.length) % out.length], b0 = out[s], c0 = out[(s + 1) % out.length];
+        var ux = a0[0] - b0[0], uy = a0[1] - b0[1], vx = c0[0] - b0[0], vy = c0[1] - b0[1];
+        var lu = Math.sqrt(ux * ux + uy * uy), lv = Math.sqrt(vx * vx + vy * vy);
+        if (lu < 16 && lv < 16 && (ux * vx + uy * vy) / (lu * lv || 1) > -0.5) { out.splice(s, 1); spiky = true; break; }
+      }
+    }
+    var changed = true;
+    while (changed && out.length > 3) {
+      changed = false;
+      for (var k = 0; k < 2 && out.length > 3; k++) {
+        var i = k === 0 ? 0 : out.length - 1;
+        var p = out[(i - 1 + out.length) % out.length], q = out[(i + 1) % out.length], m = out[i];
+        var dx = q[0] - p[0], dy = q[1] - p[1], len = Math.sqrt(dx * dx + dy * dy) || 1;
+        if (Math.abs((m[0] - p[0]) * dy - (m[1] - p[1]) * dx) / len <= eps) { out.splice(i, 1); changed = true; }
+      }
+    }
+    return out;
+  }
+
+  // Связные области маски: [{pixels: [...индексы], minX, maxX, minY, maxY}]
+  function components(mask, w, h) {
+    var label = new Int32Array(w * h), out = [], stack = [];
+    for (var i = 0; i < w * h; i++) {
+      if (!mask[i] || label[i]) continue;
+      var c = { pixels: [], minX: w, maxX: 0, minY: h, maxY: 0 };
+      label[i] = out.length + 1;
+      stack.push(i);
+      while (stack.length) {
+        var p = stack.pop(), x = p % w, y = (p / w) | 0;
+        c.pixels.push(p);
+        if (x < c.minX) c.minX = x; if (x > c.maxX) c.maxX = x;
+        if (y < c.minY) c.minY = y; if (y > c.maxY) c.maxY = y;
+        [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(function (d) {
+          var nx = x + d[0], ny = y + d[1];
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) return;
+          var q = ny * w + nx;
+          if (mask[q] && !label[q]) { label[q] = out.length + 1; stack.push(q); }
+        });
+      }
+      out.push(c);
+    }
+    return out;
+  }
+
+  // Сгладить маску: закрытие и открытие на r пикселей — без этого на
+  // контуре остаются однопиксельные шипы от бликов текстуры.
+  function smooth(mask, w, h, r) {
+    function pass(m, want) {
+      var out = new Uint8Array(m);
+      for (var y = 1; y < h - 1; y++) for (var x = 1; x < w - 1; x++) {
+        var i = y * w + x;
+        if (m[i] === want) continue;
+        if (m[i - 1] === want || m[i + 1] === want || m[i - w] === want || m[i + w] === want) out[i] = want;
+      }
+      return out;
+    }
+    var k;
+    for (k = 0; k < r; k++) mask = pass(mask, 1);
+    for (k = 0; k < 2 * r; k++) mask = pass(mask, 0);
+    for (k = 0; k < r; k++) mask = pass(mask, 1);
+    return mask;
+  }
+
+  function fillHoles(mask, w, h) {
+    var outside = new Uint8Array(w * h), stack = [0];
+    outside[0] = 1;
+    while (stack.length) {
+      var p = stack.pop(), x = p % w, y = (p / w) | 0;
+      [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(function (d) {
+        var nx = x + d[0], ny = y + d[1];
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) return;
+        var q = ny * w + nx;
+        if (!mask[q] && !outside[q]) { outside[q] = 1; stack.push(q); }
+      });
+    }
+    var out = new Uint8Array(w * h);
+    for (var i = 0; i < out.length; i++) out[i] = outside[i] ? 0 : 1;
+    return out;
+  }
+
+  new THREE.GLTFLoader().load('/assets/models/pack/robot/textured_mesh.glb', function (gltf) {
+    var mesh = null;
+    gltf.scene.updateMatrixWorld(true);
+    gltf.scene.traverse(function (o) { if (o.isMesh && !mesh) mesh = o; });
+    var geo = mesh.geometry.clone();
+    geo.applyMatrix4(mesh.matrixWorld);
+    geo.computeBoundingBox();
+    var b = geo.boundingBox;
+    var H = Math.round(W * (b.max.y - b.min.y) / (b.max.x - b.min.x));
+
+    // Спереди, ортографически, без света: в пикселях — ровно цвета текстуры.
+    var R = new THREE.WebGLRenderer({ preserveDrawingBuffer: true });
+    R.setSize(W, H);
+    var sc = new THREE.Scene();
+    sc.background = new THREE.Color(0xff00ff);
+    sc.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: mesh.material.map })));
+    var cam = new THREE.OrthographicCamera(b.min.x, b.max.x, b.max.y, b.min.y, 0.01, 20);
+    cam.position.z = 10;
+    R.render(sc, cam);
+    var px = new Uint8Array(W * H * 4);
+    R.getContext().readPixels(0, 0, W, H, R.getContext().RGBA, R.getContext().UNSIGNED_BYTE, px);   // снизу вверх
+
+    var toModel = function (x, y) {   // пиксель (y сверху) → оси модели
+      return [+(b.min.x + (x + 0.5) / W * (b.max.x - b.min.x)).toFixed(4),
+              +(b.max.y - (y + 0.5) / H * (b.max.y - b.min.y)).toFixed(4)];
+    };
+    var at = function (x, y) { return ((H - 1 - y) * W + x) * 4; };
+
+    // Тёмное — экран (и наушники, и суставы — их отсеет выбор пятна).
+    var dark = new Uint8Array(W * H);
+    for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) {
+      var i = at(x, y), r = px[i], g = px[i + 1], bl = px[i + 2];
+      var magenta = r > 200 && bl > 200 && g < 60;
+      if (!magenta && r + g + bl < 120) dark[y * W + x] = 1;
+    }
+    // Экран: самое большое тёмное пятно, у которого центр на средней
+    // вертикали и в верхней половине модели (там голова).
+    var best = null;
+    components(dark, W, H).forEach(function (c) {
+      var cx = (c.minX + c.maxX) / 2, cy = (c.minY + c.maxY) / 2;
+      if (Math.abs(cx - W / 2) > W * 0.08 || cy > H * 0.5) return;
+      if (!best || c.pixels.length > best.pixels.length) best = c;
+    });
+    if (!best) { status.textContent = 'экран не найден'; document.title = 'done'; return; }
+
+    var screen = new Uint8Array(W * H);
+    best.pixels.forEach(function (p) { screen[p] = 1; });
+    screen = smooth(fillHoles(screen, W, H), W, H, 8);   // 8 px: срезает шов текстуры, упёршийся в верх экрана
+
+    // Глаза и улыбка — светлое внутри экрана.
+    var feat = new Uint8Array(W * H);
+    for (var k = 0; k < W * H; k++) if (screen[k] && !dark[k]) feat[k] = 1;
+    var features = components(feat, W, H)
+      .filter(function (c) { return c.pixels.length > 60; })
+      .map(function (c) {
+        var m = new Uint8Array(W * H);
+        c.pixels.forEach(function (p) { m[p] = 1; });
+        m = smooth(m, W, H, 1);
+        return rdpClosed(traceBoundary(m, W, H), SIMPLIFY_PX).map(function (p) { return toModel(p[0], p[1]); });
+      });
+    var screenPoly = rdpClosed(traceBoundary(screen, W, H), SIMPLIFY_PX).map(function (p) { return toModel(p[0], p[1]); });
+
+    // Показ: модель и найденные контуры поверх.
+    var view = document.getElementById('view');
+    view.width = W; view.height = H;
+    var vg = view.getContext('2d');
+    vg.drawImage(R.domElement, 0, 0);
+    var toPx = function (p) { return [(p[0] - b.min.x) / (b.max.x - b.min.x) * W, (b.max.y - p[1]) / (b.max.y - b.min.y) * H]; };
+    [screenPoly].concat(features).forEach(function (poly, n) {
+      vg.beginPath();
+      poly.forEach(function (p, j) { var q = toPx(p); if (j) vg.lineTo(q[0], q[1]); else vg.moveTo(q[0], q[1]); });
+      vg.closePath();
+      vg.lineWidth = 4; vg.strokeStyle = n ? '#ffb000' : '#00e676'; vg.stroke();
+    });
+
+    var face = { screen: screenPoly, features: features };
+    status.textContent = 'экран: ' + screenPoly.length + ' точек; глаза и улыбка: ' +
+      features.map(function (f) { return f.length; }).join(', ') + ' точек';
+    window.FACE = face;
+
+    fetch('/tools/contours.json').then(function (r) { return r.json(); }).then(function (all) {
+      if (!all.robot) { status.textContent += ' — в contours.json нет робота, сначала node tools/robot-front-contour.js'; return; }
+      all.robot.face = face;
+      var btn = document.getElementById('save');
+      btn.disabled = false;
+      btn.onclick = function () {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([JSON.stringify(all, null, 2)], { type: 'application/json' }));
+        a.download = 'contours.json';
+        a.click();
+      };
+      window.CONTOURS = all;
+    }).then(function () { document.title = 'done'; });
+  });
+})();
+</script>
+</body>
+</html>

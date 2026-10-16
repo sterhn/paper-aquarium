@@ -376,6 +376,12 @@
     }
   }
 
+  // Материал для геометрии из bake(): у робота экран с лицом — отдельная
+  // группа со своим материалом (robot.js), остальным хватает одного.
+  function materials(geo, mat) {
+    return window.Robot && Robot.materials ? Robot.materials(geo, mat) : mat;
+  }
+
   // ── thumbnail ──────────────────────────────────────────────────────────────
   var thumbCache = {};
   var thumbRenderer = null;
@@ -440,6 +446,7 @@
     faceUVsFromManifest: faceUVsFromManifest,
     spawn: spawn,
     bake: bake,
+    materials: materials,
     thumbnail: thumbnail
   };
 })();
