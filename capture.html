@@ -235,7 +235,9 @@
 <script src="/assets/i18n.js"></script>
 <script src="/vendor/qr.js"></script>
 <script src="/vendor/three.min.js"></script>
+<script src="/vendor/GLTFLoader.js"></script>
 <script src="/assets/shape.js"></script>
+<script src="/assets/robot.js"></script>
 <script src="/assets/capture.js"></script>
 <script src="/assets/tank.js"></script>
 <script>
@@ -358,6 +360,10 @@
     var fish = null;
     manifest.fish.forEach(function (f) { if (f.name === kind) fish = f; });
     if (!fish) return fallback();
+    // Роботу нужна модель: ждём её (спиннер уже крутится) и заходим заново.
+    if (fish.shape === 'robot' && !Robot.ready && !Robot.failed) {
+      return Robot.load(function () { show3D(kind); });
+    }
 
     if (P3.group) {
       P3.scene.remove(P3.group);
@@ -376,6 +382,8 @@
     var group = new THREE.Group();
     group.add(mesh);
     group.userData.shape = fish.shape;
+    // Робот высокий (рост 1.8) — в окошко превью его вписываем.
+    if (fish.shape === 'robot') group.scale.setScalar(1.5 / (fish.size || 1.8));
     P3.group = group;
     P3.scene.add(group);
     spin.style.display = 'none';
@@ -418,26 +426,35 @@
     document.getElementById(id).classList.add('on');
   }
 
-  fetch('/assets/coloring/manifest.json')
+  // Фото, снятое до того, как пришёл манифест (телефон, медленный Wi-Fi),
+  // раньше молча пропадало. Теперь съёмка его дожидается.
+  var manifestReady = fetch('/assets/coloring/manifest.json')
     .then(function (r) { return r.json(); })
-    .then(function (m) { manifest = m; })
-    .catch(function () {
-      show('s-error');
-      document.getElementById('err-text').textContent = I18N.t('cap.err.manifest');
-    });
+    .then(function (m) { manifest = m; return m; });
+  manifestReady.catch(function () {
+    show('s-error');
+    document.getElementById('err-text').textContent = I18N.t('cap.err.manifest');
+  });
 
-  // EXIF-поворот телефонных фото разруливает createImageBitmap
-  function loadBitmap(file) {
-    if (window.createImageBitmap) {
-      return createImageBitmap(file, { imageOrientation: 'from-image' })
-        .catch(function () { return createImageBitmap(file); });
-    }
+  // EXIF-поворот телефонных фото разруливает createImageBitmap. Старые
+  // Safari понимают его через раз: бросают исключение сразу, а не отказом
+  // промиса, — и экран «Обрабатываю…» висел вечно. Поэтому каждый способ
+  // завёрнут в промис, а последний запасной — обычная картинка (её
+  // поворачивает сам браузер).
+  function loadImage(file) {
     return new Promise(function (resolve, reject) {
       var img = new Image();
       img.onload = function () { resolve(img); };
       img.onerror = reject;
       img.src = URL.createObjectURL(file);
     });
+  }
+
+  function loadBitmap(file) {
+    if (!window.createImageBitmap) return loadImage(file);
+    return new Promise(function (resolve) { resolve(createImageBitmap(file, { imageOrientation: 'from-image' })); })
+      .catch(function () { return createImageBitmap(file); })
+      .catch(function () { return loadImage(file); });
   }
 
   window.handlePhoto = function (source) {   // отдельно — для автотестов
@@ -484,9 +501,13 @@
   document.getElementById('file').addEventListener('change', function () {
     var file = this.files && this.files[0];
     this.value = '';
-    if (!file || !manifest) return;
+    if (!file) return;
     show('s-busy');
-    loadBitmap(file).then(window.handlePhoto, function () {
+    loadBitmap(file).then(function (bmp) {
+      return manifestReady.then(function () {
+        return window.handlePhoto(bmp).catch(function () { /* экран ошибки уже показан */ });
+      }, function () { /* про манифест экран ошибки уже показан */ });
+    }, function () {
       document.getElementById('err-text').textContent = I18N.t('cap.err.photo');
       show('s-error');
     });
@@ -497,8 +518,13 @@
     applyBoost();   // страховка: rAF мог не успеть — уходит то, что на ползунке
     document.getElementById('busy-text').textContent = I18N.t('cap.sending');
     show('s-busy');
+    // Без срока отправка по пропавшему Wi-Fi крутила «Отправляю…» вечно.
+    // Минуты с запасом хватает и на медленную сеть: картинка — пара мегабайт.
+    var ctrl = window.AbortController ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 60000) : 0;
     return fetch(Tank.api + '/fish', {
       method: 'POST',
+      signal: ctrl ? ctrl.signal : undefined,
       headers: { 'Content-Type': 'application/json' },
       // текстура запекается с текущим положением ползунка — в аквариум
       // уплывает то, что человек видел на превью
@@ -507,8 +533,12 @@
         texture: result.boost ? result.boost.bake().texture : result.texture
       })
     }).then(function (r) {
+      clearTimeout(timer);
       if (!r.ok) throw new Error(I18N.t('cap.err.status', { code: r.status }));
       return r.json();
+    }, function (err) {
+      clearTimeout(timer);
+      throw err && err.name === 'AbortError' ? new Error(I18N.t('cap.err.timeout')) : err;
     }).then(function (r) {
       show('s-done');
       tellTank();

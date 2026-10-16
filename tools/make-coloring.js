@@ -65,16 +65,26 @@ const SPECIES = [
     face: 45, tab: 6, hint: 'Вырежи по сплошной линии, согни по пунктиру, склей за язычки — и кубик готов' },
   { name: 'planet', title: 'Планета', shape: 'sphere', size: 1.1,
     strip: [200, 100], hint: 'Раскрась полоску — она обернётся вокруг планеты. Левый и правый край сойдутся' },
-  { name: 'star', title: 'Звезда', shape: 'star', size: 1.1,
+  // Звезду заменил робот. Скрыта, а не удалена: удаление сдвинуло бы коды
+  // меток у видов ниже по списку, а звёзды, уже живущие в аквариумах,
+  // пропали бы.
+  { name: 'star', title: 'Звезда', shape: 'star', size: 1.1, hidden: true,
     star: true, hint: 'Раскрась звезду — она оживёт в аквариуме' },
-  { name: 'brownfish', title: 'Рыба-шоколадка', shape: 'fish', size: 1.5,
+  // hidden — вид временно убран из печати и меню, но лист и метки за ним
+  // сохраняются: уже напечатанные листы продолжают распознаваться.
+  { name: 'brownfish', title: 'Рыба-шоколадка', shape: 'fish', size: 1.5, hidden: true,
     fish: true, hint: 'Раскрась рыбку — она оживёт в аквариуме' },
-  { name: 'clownfish', title: 'Рыба-клоун', shape: 'fish', size: 1.5,
+  { name: 'clownfish', title: 'Рыба-клоун', shape: 'fish', size: 1.5, hidden: true,
     fish: true, hint: 'Раскрась рыбку — она оживёт в аквариуме' },
-  { name: 'tuna', title: 'Тунец', shape: 'fish', size: 1.8,
+  { name: 'tuna', title: 'Тунец', shape: 'fish', size: 1.8, hidden: true,
     fish: true, hint: 'Раскрась рыбку — она оживёт в аквариуме' },
-  { name: 'dory', title: 'Дори', shape: 'fish', size: 1.5,
+  { name: 'dory', title: 'Дори', shape: 'fish', size: 1.5, hidden: true,
     fish: true, hint: 'Раскрась рыбку — она оживёт в аквариуме' },
+  // Робот — настоящая 3D-модель (assets/models/pack/robot), size — его рост.
+  // Новые виды — только в конец списка: тогда коды меток у прежних не
+  // меняются и напечатанные листы остаются рабочими.
+  { name: 'robot', title: 'Робот', shape: 'robot', size: 1.8,
+    hint: 'Раскрась робота спереди и сзади — он оживёт в аквариуме' },
 ];
 
 function sheetFile(name) { return name + '.svg'; }
@@ -257,11 +267,57 @@ function fishNet(name) {
   return { faces: { map: rect(x0, y0, w, h) }, tabs: [], folds: [], outline };
 }
 
+// Робот: два силуэта рядом — спереди и сзади. Раньше на листе был только
+// перёд, и сцена просвечивала его сквозь модель: на затылке оказывалось
+// зеркальное лицо, а бока шли полосами. Теперь у спины свой рисунок,
+// и assets/robot.js раздаёт каждому треугольнику модели ту сторону,
+// куда он смотрит.
+//
+// Силуэт — проекция модели на XY (tools/robot-front-contour.js), в единицах
+// модели. На лист он ложится так:
+//   спереди: x = front + scale·X,  y = oy − scale·Y
+//   сзади:   x = back  − scale·X,  y = oy − scale·Y   (вид со спины — зеркало)
+// Эти же числа уходят в манифест (projection): по ним сцена считает UV.
+function robotNet(name) {
+  const c = CONTOURS[name];
+  if (!c || !c.contour) throw new Error('нет контура для ' + name + ' — запустите tools/robot-front-contour.js');
+  const [bx0, bx1] = c.bbox.z, [by0, by1] = c.bbox.y;
+  const top = SHEET.work.y0 + 2, labelGap = 12, gap = 30;
+  const scale = (SHEET.work.y1 - top - labelGap) / (by1 - by0);
+  const w = (bx1 - bx0) * scale;
+  const xc = (bx0 + bx1) / 2;
+  const cxFront = SHEET.w / 2 - (w + gap) / 2;
+  const cxBack = SHEET.w / 2 + (w + gap) / 2;
+  const projection = {
+    scale: r2(scale),
+    oy: r2(top + by1 * scale),
+    front: r2(cxFront - xc * scale),
+    back: r2(cxBack + xc * scale)
+  };
+  const place = (ox, dir) => c.contour.map(([x, y]) => [r2(ox + dir * projection.scale * x), r2(projection.oy - projection.scale * y)]);
+  const front = place(projection.front, 1);
+  const back = place(projection.back, -1);
+  const box = (pts) => {
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    return rect(Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+  };
+  const labelY = SHEET.work.y1 - 3;
+  return {
+    faces: { front: box(front), back: box(back) },
+    tabs: [], folds: [],
+    outlines: [front, back],
+    labels: [[cxFront, labelY, 'спереди'], [cxBack, labelY, 'сзади']],
+    projection,
+    contours: { front, back }
+  };
+}
+
 function netOf(s) {
   if (s.shape === 'cube') return cubeNet(s.face, s.tab);
   if (s.shape === 'sphere') return stripNet(s.strip[0], s.strip[1]);
   if (s.shape === 'star') return starNet();
   if (s.shape === 'fish') return fishNet(s.name);
+  if (s.shape === 'robot') return robotNet(s.name);
   throw new Error('не знаю, как разворачивать ' + s.shape);
 }
 
@@ -298,7 +354,11 @@ function buildSvg(fish, net) {
   // Контур разреза: объединение граней и язычков. Рисуем каждый кусок
   // отдельно, а общие рёбра перекрываем пунктиром сгиба сверху — так линия
   // реза остаётся сплошной только там, где действительно режут.
-  const pieces = Object.values(net.faces).map(([x, y, w, h]) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]])
+  // У рыб и робота рамки нет: красят по силуэту, а прямоугольник вокруг
+  // только сбивает с толку (у рыб её убрали в #5). Звезда пока с рамкой.
+  const framed = fish.shape !== 'fish' && !net.outlines;
+  const pieces = (framed ? Object.values(net.faces) : [])
+    .map(([x, y, w, h]) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]])
     .concat(net.tabs);
   for (const p of pieces) {
     parts.push(`  <path d="${poly(p)}" fill="#fff" stroke="${CUT.color}" stroke-width="${CUT.width}" stroke-linejoin="round"/>`);
@@ -325,6 +385,12 @@ function buildSvg(fish, net) {
   if (net.outline) {
     parts.push(`  <path d="${poly(net.outline)}" fill="#fff" stroke="${CUT.color}" stroke-width="${CUT.width}" stroke-linejoin="round"/>`);
   }
+  for (const o of net.outlines || []) {
+    parts.push(`  <path d="${poly(o)}" fill="#fff" stroke="${CUT.color}" stroke-width="${CUT.width}" stroke-linejoin="round"/>`);
+  }
+  for (const [x, y, text] of net.labels || []) {
+    parts.push(`  <text x="${x.toFixed(2)}" y="${y.toFixed(2)}" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="4" fill="#999">${esc(text)}</text>`);
+  }
 
   parts.push(
     `  <text x="${SHEET.w / 2}" y="21" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="4.2" fill="#666">${esc(fish.hint)}</text>`,
@@ -343,6 +409,7 @@ function main() {
     const faces = net.faces;
     const f = {
       id: i + 1,
+      ...(s.hidden ? { hidden: true } : {}),
       name: s.name,
       title: s.title,
       shape: s.shape,
@@ -364,6 +431,12 @@ function main() {
     };
     if (s.shape === 'fish' && CONTOURS[s.name]) {
       f.outline = CONTOURS[s.name].outline;
+    }
+    // Робот: как модель ложится на лист (для UV в assets/robot.js) и оба
+    // силуэта в мм листа (по ним capture.js режет рисунок от бумаги).
+    if (net.projection) {
+      f.projection = net.projection;
+      f.contours = net.contours;
     }
     f._net = net;
     return f;

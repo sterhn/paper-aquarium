@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Проверка фигур</title>
+<style>
+  body { margin: 0; background: #223; color: #ccd; font: 14px system-ui, sans-serif; }
+  p { margin: 8px 12px; }
+  canvas { display: block; }
+  #photo { max-width: 600px; }
+</style>
+</head>
+<body>
+<!-- Проверка фигуры от листа до 3D, без телефона: лист раскрашивается
+     программно, слегка поворачивается, как на фото, проходит через
+     настоящий capture.js и ложится на фигуру через Shape.bake — так же,
+     как в аквариуме. Внизу — фигура с четырёх сторон: спереди,
+     вполоборота, сбоку, сзади.
+
+     ?kind=robot (по умолчанию) — перёд и спина разными цветами: лицо
+       спереди, на спине свой рисунок, на боках нет полос.
+       ?legacy — текстура старого образца (только перёд).
+     ?kind=star, cube, planet… — верх листа красный, низ синий, слева
+       зелёная полоса, в центре жёлтый круг: по ним видно, что рисунок
+       лёг на фигуру той же стороной вверх и не съехал. -->
+<p id="status">готовлю лист…</p>
+<canvas id="views" width="1200" height="420"></canvas>
+<canvas id="photo"></canvas>
+<script src="/vendor/three.min.js"></script>
+<script src="/vendor/GLTFLoader.js"></script>
+<script src="/assets/shape.js"></script>
+<script src="/assets/robot.js"></script>
+<script src="/assets/capture.js"></script>
+<script>
+(function () {
+  'use strict';
+  var PX = 5;   // пикселей на мм листа
+  var status = document.getElementById('status');
+
+  function say(t) { status.textContent = t; }
+
+  // Не робот: метки ориентации по прямоугольнику crop.
+  function colourPlain(g, fish) {
+    var c = fish.crop, x = c[0] * PX, y = c[1] * PX, w = c[2] * PX, h = c[3] * PX;
+    g.fillStyle = '#e53935'; g.fillRect(x, y, w, h / 2);
+    g.fillStyle = '#1e63d6'; g.fillRect(x, y + h / 2, w, h / 2);
+    g.fillStyle = '#2e9d44'; g.fillRect(x, y, w * 0.18, h);
+    g.fillStyle = '#ffd23f'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) * 0.14, 0, 7); g.fill();
+  }
+
+  function colourSheet(fish, sheetImg) {
+    var W = 297 * PX, H = 210 * PX;
+    var c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    var g = c.getContext('2d');
+    g.drawImage(sheetImg, 0, 0, W, H);
+    if (!fish.projection) { colourPlain(g, fish); return photoOf(c); }
+    var P = fish.projection;
+    // модельные (X, Y) → пиксели листа для нужной стороны
+    function at(side, X, Y) {
+      var sx = side === 'front' ? P.front + P.scale * X : P.back - P.scale * X;
+      return [sx * PX, (P.oy - P.scale * Y) * PX];
+    }
+    function clip(side) {
+      g.save();
+      g.beginPath();
+      fish.contours[side].forEach(function (p, i) { if (i) g.lineTo(p[0] * PX, p[1] * PX); else g.moveTo(p[0] * PX, p[1] * PX); });
+      g.closePath();
+      g.clip();
+    }
+    function band(side, y0, y1, col) {
+      var a = at(side, 0, y1)[1], b = at(side, 0, y0)[1];
+      g.fillStyle = col; g.fillRect(0, a, W, b - a);
+    }
+    function dot(side, X, Y, r, col) {
+      var q = at(side, X, Y);
+      g.fillStyle = col; g.beginPath(); g.arc(q[0], q[1], r * P.scale * PX, 0, 7); g.fill();
+    }
+    // перёд: голова голубая с тёмным экраном и глазами, туловище оранжевое, ноги зелёные
+    clip('front');
+    band('front', 0.62, 1.1, '#f6c344');
+    band('front', -0.2, 0.62, '#7cc6f2');
+    band('front', -0.62, -0.2, '#f08a3c');
+    band('front', -1.1, -0.62, '#4caf50');
+    var s1 = at('front', -0.3, 0.42), s2 = at('front', 0.3, 0.0);
+    g.fillStyle = '#1d2333'; g.fillRect(s1[0], s1[1], s2[0] - s1[0], s2[1] - s1[1]);
+    dot('front', -0.13, 0.22, 0.06, '#5ff');
+    dot('front', 0.13, 0.22, 0.06, '#5ff');
+    g.restore();
+    // спина: вся фиолетовая, на голове жёлтое сердце (кружки), на туловище красный ранец
+    clip('back');
+    band('back', -1.1, 1.1, '#9b6bd6');
+    dot('back', -0.08, 0.25, 0.11, '#ffd23f');
+    dot('back', 0.08, 0.25, 0.11, '#ffd23f');
+    var r1 = at('back', -0.15, -0.25), r2 = at('back', 0.15, -0.55);
+    g.fillStyle = '#e53935'; g.fillRect(Math.min(r1[0], r2[0]), r1[1], Math.abs(r2[0] - r1[0]), r2[1] - r1[1]);
+    g.restore();
+    return photoOf(c);
+  }
+
+  // «Фото»: лист под углом на сером столе.
+  function photoOf(c) {
+    var W = c.width, H = c.height;
+    var ph = document.createElement('canvas');
+    ph.width = 1700; ph.height = 1300;
+    var pg = ph.getContext('2d');
+    pg.fillStyle = '#6b6f78'; pg.fillRect(0, 0, ph.width, ph.height);
+    pg.translate(ph.width / 2, ph.height / 2);
+    pg.rotate(-0.12);
+    pg.drawImage(c, -W / 2, -H / 2);
+    return ph;
+  }
+
+  function renderViews(geo, tex) {
+    var R = new THREE.WebGLRenderer({ canvas: document.getElementById('views'), antialias: true, preserveDrawingBuffer: true });
+    R.outputEncoding = THREE.sRGBEncoding;
+    R.setScissorTest(true);
+    [0, Math.PI / 4, Math.PI / 2, Math.PI].forEach(function (ang, k) {
+      var sc = new THREE.Scene();
+      sc.background = new THREE.Color(0x2a2f45);
+      sc.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.9));
+      var dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(1, 2, 3); sc.add(dl);
+      var m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5, metalness: 0.05 }));
+      m.rotation.y = ang;
+      sc.add(m);
+      var cam = new THREE.PerspectiveCamera(30, 300 / 420, 0.1, 50);
+      cam.position.set(0, 0, 4); cam.lookAt(0, 0, 0);
+      R.setViewport(k * 300, 0, 300, 420); R.setScissor(k * 300, 0, 300, 420);
+      R.render(sc, cam);
+    });
+  }
+
+  var legacy = /legacy/.test(location.search);
+  var KIND = new URLSearchParams(location.search).get('kind') || 'robot';
+  fetch('/assets/coloring/manifest.json').then(function (r) { return r.json(); }).then(function (manifest) {
+    var fish = manifest.fish.filter(function (f) { return f.name === KIND; })[0];
+    var img = new Image();
+    img.onload = function () {
+      var photo = colourSheet(fish, img);
+      var pc = document.getElementById('photo');
+      pc.width = photo.width; pc.height = photo.height;
+      pc.getContext('2d').drawImage(photo, 0, 0);
+      say('распознаю…');
+      var t0 = performance.now();
+      FishCapture.processPhoto(photo, manifest).then(function (res) {
+        var ms = Math.round(performance.now() - t0);
+        Robot.load(function (ok) {
+          if (!ok && KIND === 'robot') return say('модель не загрузилась');
+          var texCanvas = res.boost.texCanvas;
+          if (legacy) {
+            // старый образец: только перёд, по габариту модели
+            var b = { x0: fish.projection.front - fish.projection.scale * 0.602, x1: fish.projection.front + fish.projection.scale * 0.5941 };
+            var crop = fish.crop, k = texCanvas.width / crop[2];
+            var lc = document.createElement('canvas');
+            lc.width = Math.round((b.x1 - b.x0) * k); lc.height = Math.round(crop[3] * k);
+            lc.getContext('2d').drawImage(texCanvas, (b.x0 - crop[0]) * k, 0, lc.width, lc.height, 0, 0, lc.width, lc.height);
+            texCanvas = lc;
+          }
+          var tex = new THREE.CanvasTexture(texCanvas);
+          tex.encoding = THREE.sRGBEncoding;
+          renderViews(Shape.bake(fish, { legacy: legacy || Robot.isLegacyTexture(texCanvas) }), tex);
+          say('распознан вид: ' + res.kind + ' (' + ms + ' мс); текстура ' + texCanvas.width + '×' + texCanvas.height);
+          document.title = 'done';
+        });
+      }).catch(function (e) { say('ошибка: ' + e.message); document.title = 'done'; });
+    };
+    img.src = '/' + fish.svg;
+  });
+})();
+</script>
+</body>
+</html>
