@@ -365,9 +365,8 @@
       return Robot.load(function () { show3D(kind); });
     }
 
-    // Раскраска — P3.mat. У робота в меше ещё и материал экрана, общий
-    // для всех роботов (robot.js), — его не освобождаем. Геометрию тоже:
-    // робот её кэширует, а остальным пересоздать недорого.
+    // Раскраска — P3.mat. Геометрию робота не освобождаем: robot.js её
+    // кэширует, а остальным пересоздать недорого.
     if (P3.group) {
       P3.scene.remove(P3.group);
       P3.mat.map.dispose();
@@ -410,6 +409,7 @@
         P3.camera.updateProjectionMatrix();
       }
       var t = (now - t0) / 1000;
+      if (window.Robot) Robot.uTime.value = t;
       if (P3.group) {
         if (P3.group.userData.shape === 'cube') {
           P3.group.rotation.y = Math.sin(t * 0.5) * 0.7;

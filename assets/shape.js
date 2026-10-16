@@ -376,8 +376,8 @@
     }
   }
 
-  // Материал для геометрии из bake(): у робота экран с лицом — отдельная
-  // группа со своим материалом (robot.js), остальным хватает одного.
+  // Материал для геометрии из bake(): роботу — движение (robot.js),
+  // остальным раскраска отдаётся как есть.
   function materials(geo, mat) {
     return window.Robot && Robot.materials ? Robot.materials(geo, mat) : mat;
   }

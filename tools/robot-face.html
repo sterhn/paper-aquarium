@@ -24,7 +24,9 @@
           (глаза, улыбка) заливаются;
        3. глаза и улыбка — светлые пятна внутри экрана.
 
-     Результат — contours.json с полем robot.face {screen, features};
+     Глаза — два самых крупных пятна, рот — остальное.
+
+     Результат — contours.json с полем robot.face {screen, eyes, mouth};
      положить в tools/ и запустить node tools/make-coloring.js. -->
 <h1>Лицо робота</h1>
 <p class="sub" id="status">Загрузка…</p>
@@ -226,14 +228,18 @@
     // Глаза и улыбка — светлое внутри экрана.
     var feat = new Uint8Array(W * H);
     for (var k = 0; k < W * H; k++) if (screen[k] && !dark[k]) feat[k] = 1;
-    var features = components(feat, W, H)
+    var spots = components(feat, W, H)
       .filter(function (c) { return c.pixels.length > 60; })
-      .map(function (c) {
+      .sort(function (a, b) { return b.pixels.length - a.pixels.length; });
+    var trace = function (c) {
         var m = new Uint8Array(W * H);
         c.pixels.forEach(function (p) { m[p] = 1; });
         m = smooth(m, W, H, 1);
         return rdpClosed(traceBoundary(m, W, H), SIMPLIFY_PX).map(function (p) { return toModel(p[0], p[1]); });
-      });
+    };
+    var eyes = spots.slice(0, 2).map(trace);
+    var mouth = spots.slice(2).map(trace);
+    var features = eyes.concat(mouth);
     var screenPoly = rdpClosed(traceBoundary(screen, W, H), SIMPLIFY_PX).map(function (p) { return toModel(p[0], p[1]); });
 
     // Показ: модель и найденные контуры поверх.
@@ -246,12 +252,13 @@
       vg.beginPath();
       poly.forEach(function (p, j) { var q = toPx(p); if (j) vg.lineTo(q[0], q[1]); else vg.moveTo(q[0], q[1]); });
       vg.closePath();
-      vg.lineWidth = 4; vg.strokeStyle = n ? '#ffb000' : '#00e676'; vg.stroke();
+      vg.lineWidth = 4; vg.strokeStyle = n === 0 ? '#00e676' : n <= eyes.length ? '#ffb000' : '#ff3d6e'; vg.stroke();   // экран, глаза, рот
     });
 
-    var face = { screen: screenPoly, features: features };
-    status.textContent = 'экран: ' + screenPoly.length + ' точек; глаза и улыбка: ' +
-      features.map(function (f) { return f.length; }).join(', ') + ' точек';
+    var face = { screen: screenPoly, eyes: eyes, mouth: mouth };
+    status.textContent = 'экран: ' + screenPoly.length + ' точек; глаза: ' +
+      eyes.map(function (f) { return f.length; }).join(', ') + '; рот: ' +
+      mouth.map(function (f) { return f.length; }).join(', ') + ' точек';
     window.FACE = face;
 
     fetch('/tools/contours.json').then(function (r) { return r.json(); }).then(function (all) {
