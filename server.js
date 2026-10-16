@@ -953,9 +953,13 @@ function webpTwin(file) {
 // кода: страница с новым JS и вчерашним списком видов сломает фигуры.
 // Картинки меняются редко, их держим сутки; всё из data/
 // живёт вместе с аквариумом и меняется на ходу.
+// Листы раскрасок (SVG, PDF) и модели — тоже часть кода: они меняются вместе
+// с манифестом. Сутки в кэше — это сутки старого листа на экране и на печати
+// после обновления, а у робота ещё и модель, не совпадающая с манифестом.
 function cacheControl(ext, url) {
   if (ext === '.html' || ext === '.js' || ext === '.css' || ext === '.json') return 'no-cache';
   if (url.startsWith('/data/')) return 'no-cache';
+  if (url.startsWith('/assets/coloring/') || url.startsWith('/assets/models/')) return 'no-cache';
   return 'public, max-age=86400';
 }
 
