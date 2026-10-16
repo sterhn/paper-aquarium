@@ -293,15 +293,38 @@
         cropMM.x0 * PX_PER_MM, cropMM.y0 * PX_PER_MM, cropW * PX_PER_MM, cropH * PX_PER_MM,
         0, 0, TEX_W, TH);
 
-      // Прямоугольная маска с вырезанной печатной обводкой по краю:
-      // заливка всего crop минус штрих по периметру шириной TRIM_MM.
+      // Маска раскраски с вырезанной печатной обводкой. Обычно это весь crop
+      // минус штрих по периметру шириной TRIM_MM. У робота — его силуэты
+      // (fish.contours, мм листа) минус штрих вдоль самого контура: бумага
+      // вокруг не должна попасть на модель белыми пятнами.
       var pxPerMMTex = TEX_W / cropW;
       var trimPx = TRIM_MM * pxPerMMTex;
       var maskCv = document.createElement('canvas');
       maskCv.width = TEX_W; maskCv.height = TH;
       var mctx = maskCv.getContext('2d');
       mctx.fillStyle = '#fff';
-      mctx.fillRect(trimPx, trimPx, TEX_W - trimPx * 2, TH - trimPx * 2);
+      var outlines = fish.contours ? Object.keys(fish.contours).map(function (k) { return fish.contours[k]; }) : null;
+      if (outlines) {
+        var outlinePath = function () {
+          mctx.beginPath();
+          outlines.forEach(function (pts) {
+            pts.forEach(function (p, i) {
+              var px = (p[0] - cropMM.x0) * pxPerMMTex, py = (p[1] - cropMM.y0) * pxPerMMTex;
+              if (i) mctx.lineTo(px, py); else mctx.moveTo(px, py);
+            });
+            mctx.closePath();
+          });
+        };
+        outlinePath();
+        mctx.fill();
+        mctx.globalCompositeOperation = 'destination-out';
+        outlinePath();
+        mctx.lineWidth = trimPx * 2;
+        mctx.lineJoin = 'round';
+        mctx.stroke();
+      } else {
+        mctx.fillRect(trimPx, trimPx, TEX_W - trimPx * 2, TH - trimPx * 2);
+      }
       var mask = mctx.getImageData(0, 0, TEX_W, TH).data;
 
       var img = tctx.getImageData(0, 0, TEX_W, TH);
@@ -318,8 +341,11 @@
       }
       var avg = an ? [ar[0] / an | 0, ar[1] / an | 0, ar[2] / an | 0] : [220, 214, 200];
 
-      // Цвета раскраски вытягиваем наружу за срезанный край: волна дилатации
-      var passes = Math.ceil(trimPx) + 6;
+      // Цвета раскраски вытягиваем наружу за срезанный край: волна дилатации.
+      // У силуэта тянем дальше: края модели (пальцы, антенна, бока) берут
+      // цвет у самого контура и чуть за ним — пусть там будет цвет рисунка,
+      // а не средний по листу.
+      var passes = Math.ceil(trimPx) + (outlines ? 40 : 6);
       for (var p = 0; p < passes; p++) {
         var next = new Uint8Array(filled);
         var changed = false;

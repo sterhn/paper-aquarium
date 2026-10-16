@@ -273,7 +273,7 @@ function main() {
   let all = {};
   try { all = JSON.parse(fs.readFileSync(CONTOURS, 'utf8')); } catch (e) { /* первый запуск */ }
   all[NAME] = { contour, bbox };
-  fs.writeFileSync(CONTOURS, JSON.stringify(all) + '\n');
+  fs.writeFileSync(CONTOURS, JSON.stringify(all, null, 2), 'utf8');   // как в split-fish.js
   console.log(`${NAME}: ${boundary.length} px → ${contour.length} точек; габарит ` +
     `${(bbox.z[1] - bbox.z[0]).toFixed(3)} × ${(bbox.y[1] - bbox.y[0]).toFixed(3)} → ${path.relative(ROOT, CONTOURS)}`);
 }

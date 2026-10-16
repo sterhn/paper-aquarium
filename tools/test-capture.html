@@ -88,17 +88,23 @@
   }
 
   // ── имитация детской раскраски ───────────────────────────────────────────
+  // Красим внутри того, что с листа уходит в текстуру: у робота — его
+  // силуэты (contours, мм листа), у остальных — прямоугольник crop.
   function colorInside(ctx, fish, sheet) {
-    var st = fish.sheetTransform;
     var kx = SHEET_W / sheet.w, ky = SHEET_H / sheet.h;
     ctx.save();
     ctx.beginPath();
-    fish.contourModel.forEach(function (p, i) {
-      var x = (st.ox + st.scale * p[0]) * kx;
-      var y = (st.oy - st.scale * p[1]) * ky;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
-    ctx.closePath();
+    if (fish.contours) {
+      Object.keys(fish.contours).forEach(function (side) {
+        fish.contours[side].forEach(function (p, i) {
+          if (i === 0) ctx.moveTo(p[0] * kx, p[1] * ky); else ctx.lineTo(p[0] * kx, p[1] * ky);
+        });
+        ctx.closePath();
+      });
+    } else {
+      var c = fish.crop;
+      ctx.rect(c[0] * kx, c[1] * ky, c[2] * kx, c[3] * ky);
+    }
     ctx.clip();
 
     for (var i = 0; i < 26; i++) {

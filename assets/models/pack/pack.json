@@ -33,5 +33,10 @@
   "name": "dory",
   "title": "Дори",
   "shape": "fish"
+ },
+ {
+  "name": "robot",
+  "title": "Робот",
+  "shape": "robot"
  }
 ]

@@ -319,7 +319,14 @@
     [0.15,0.8]
   ];
 
+  // Робот — не процедурный, а модель (assets/robot.js). Пока она не
+  // загружена (или не загрузилась вовсе), на его месте кубик: так фигура
+  // хотя бы появится, а не пропадёт молча.
+  function robotReady() { return !!(window.Robot && Robot.ready); }
+
   function spawn(shape, size, tex, outline) {
+    if (shape === 'robot' && robotReady()) return Robot.spawn(size, tex);
+    if (shape === 'robot') shape = 'cube';
     var mat = new THREE.MeshStandardMaterial({
       map: tex || defaultTexture(shape),
       roughness: 0.45,
@@ -349,8 +356,11 @@
   }
 
   // ── bake: геометрия для painted фигур с UV из манифеста ────────────────────
-  function bake(fish) {
+  // opts.legacy — только для робота: текстура старого образца (см. robot.js).
+  function bake(fish, opts) {
     var size = fish.size || 1.7;
+    if (fish.shape === 'robot' && robotReady()) return Robot.bake(fish, opts);
+    if (fish.shape === 'robot') return cubeGeo(size * 0.6, {});
     if (fish.shape === 'cube') {
       var uvs = faceUVsFromManifest(fish);
       return cubeGeo(size, uvs);
@@ -372,6 +382,10 @@
 
   function thumbnail(shape, cb) {
     if (thumbCache[shape]) return cb(thumbCache[shape]);
+    if (shape === 'robot' && !robotReady()) {
+      if (!window.Robot) return cb(null);
+      return Robot.load(function (ok) { if (ok) thumbnail(shape, cb); else cb(null); });
+    }
     if (!thumbRenderer) {
       try { thumbRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
       catch (e) { return cb(null); }
@@ -394,10 +408,12 @@
       s.group.rotation.set(0.15, 0.3, 0.1);
     } else if (shape === 'fish') {
       s.group.rotation.set(0.15, 0.3, 0.1);
+    } else if (shape === 'robot') {
+      s.group.rotation.set(0.05, 0.35, 0);
     }
 
     var camera = new THREE.PerspectiveCamera(35, 232 / 148, 0.1, 100);
-    camera.position.set(0, 0, shape === 'cube' ? 3.2 : shape === 'star' ? 3.0 : shape === 'fish' ? 3.4 : 3.6);
+    camera.position.set(0, 0, shape === 'cube' ? 3.2 : shape === 'star' ? 3.0 : shape === 'fish' ? 3.4 : shape === 'robot' ? 2.6 : 3.6);
     camera.lookAt(0, 0, 0);
 
     thumbRenderer.render(scene, camera);
@@ -405,8 +421,12 @@
     thumbCache[shape] = url;
 
     s.mat.dispose();
-    s.mesh.geometry.dispose();
-    if (s.mat.map) s.mat.map.dispose();
+    // У робота геометрия и текстура общие для всех его копий (robot.js),
+    // их освобождать нельзя — сцена аквариума ими ещё пользуется.
+    if (shape !== 'robot') {
+      s.mesh.geometry.dispose();
+      if (s.mat.map) s.mat.map.dispose();
+    }
 
     cb(url);
   }
